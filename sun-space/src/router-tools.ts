@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { inlineSummary, parseFrontmatter, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
 import { currentUserId, dingSelf, notifySelf } from './dws'
 
-export const inject = ['tools']
+export const inject = ['tools', 'subagents']
 
 export const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
 
@@ -36,13 +36,13 @@ export function lossless<T>(value: T): T {
   return value
 }
 
-function def(name: string, description: string, parameters: unknown, execute: (args: any) => Promise<unknown>) {
+function def(name: string, description: string, parameters: unknown, execute: (args: any, exec?: unknown) => Promise<unknown>) {
   return {
     name,
     description,
     parameters,
     output: { schema: ok({}), render: (args: unknown, value: unknown) => text(JSON.stringify(value)) },
-    execute: async (args: unknown) => lossless(await execute(args ?? {})),
+    execute: async (args: unknown, exec: unknown) => lossless(await execute(args ?? {}, exec)),
   }
 }
 
@@ -208,5 +208,48 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify (+sun_route via tool-subagent)')
+  ctx.tools.register(def(
+    'sun_route',
+    '创建子 Worker 会话并分派任务（task_id + prompt）。子会话以 task_id 命名、其会话 id 自动回写任务笔记 session 字段（工作台卡片可直达）。name 冲突时自动改用系统命名。',
+    {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID（T-YYYYMMDD-NN），用于命名子会话与回写 session 字段' },
+        prompt: { type: 'string', description: 'Worker 的完整任务指令（含产物要求与 sun_artifact_write 用法）' },
+      },
+      required: ['task_id', 'prompt'],
+    },
+    async (args: { task_id: string; prompt: string }, execUnknown?: unknown) => {
+      const exec = (execUnknown ?? {}) as { agent?: unknown; signal?: AbortSignal }
+      const rawName = String(args.task_id || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+/, 't-').slice(0, 32)
+      const name = /^[a-z][a-z0-9-]{0,31}$/.test(rawName) ? rawName : undefined
+      let activation: { childId?: string; name: string }
+      try {
+        activation = await ctx.subagents.startActivation({
+          provider: 'spawn',
+          label: name || 'sun-worker',
+          ...(name ? { name } : {}),
+          request: {
+            prompt: [{ type: 'text', text: String(args.prompt || '') }],
+            parent: exec.agent,
+            agentPreset: 'sun-worker', // 子会话挂 Worker 预设（组合白名单保证只执行）
+            maxDepth: 1,
+          },
+          signal: exec.signal,
+          delivery: 'parent',
+        })
+      } catch (e) {
+        return { ok: false, error: String((e as Error).message), stack: String((e as Error).stack || '').slice(0, 900) }
+      }
+      // 子会话 id 回写任务笔记（卡片点击直达）
+      try {
+        const p = resolveSafe(VAULT, `50-Tasks/${args.task_id}.md`)
+        const raw = await readFile(p, 'utf8')
+        await writeFile(p, updateFrontmatter(raw, { session: String(activation.childId ?? '') }), 'utf8')
+      } catch { /* 笔记缺失不阻断派发 */ }
+      return { ok: true, name: activation.name, child_id: activation.childId ?? null }
+    },
+  ))
+
+  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify sun_route(subagents)')
 }

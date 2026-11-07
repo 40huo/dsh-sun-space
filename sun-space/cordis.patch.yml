@@ -44,14 +44,6 @@
           # 4 个 sun_* 工具
           - id: sun-router-tools
             name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/router-tools.mjs'
-          # sun_route：官方委派工具实例，子代一律 sun-worker 预设
-          - id: sun-route
-            name: '@deepseek-ai/dsh-tool-subagent'
-            config:
-              provider: spawn
-              toolName: sun_route
-              agentPreset: sun-worker
-              maxDepth: 1
           # 官方人工确认卡（ask_user_question）——架构 sun_ask 的现成实现
           - id: sun-ask
             name: '@deepseek-ai/dsh-tool-ask-user'

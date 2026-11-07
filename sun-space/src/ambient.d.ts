@@ -20,6 +20,9 @@ declare module '@deepseek-ai/cordis' {
       guard(guard: (call: { name: string; arguments?: Record<string, unknown> }) => string | void): () => void
       restrict(filter: { allow?: string[]; deny?: string[] }): () => void
     }
+    subagents: {
+      startActivation(spec: Record<string, unknown>): Promise<{ childId?: string; name: string; result?: unknown; dispose?: () => void }>
+    }
     timer: unknown
     /** TimerService 混入方法（vendor/timer 运行时提供，随 fiber 清理） */
     timeout(callback: () => void, delay: number): () => void
