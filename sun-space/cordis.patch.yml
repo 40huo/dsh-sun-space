@@ -57,8 +57,8 @@
       name: '@deepseek-ai/dsh-agent-preset'
       config:
         id: sun-worker
-        name: Sun Worker（只执行，不对外）
-        description: 执行工具 + BLOCKED/noWait 守卫；无提问/呈现/委派
+        name: Sun Worker（Router 自动派发·无需手选）
+        description: 内部组件——由 sun_route 派发时自动挂载；工具白名单与守卫见 sun-space/sessions
         order: 11
         plugins:
           - id: persona
