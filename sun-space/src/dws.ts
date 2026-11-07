@@ -51,13 +51,29 @@ export async function currentUserId(): Promise<string> {
   return uid
 }
 
-/** 给自己发消息（IM 主信道）。内容 ≤ 会被插件截断；真实发送。 */
+/** 给自己发消息（IM 主信道，无客户端推送——ask/urgent 需配 dingSelf）。内容过长会被截断；真实发送。 */
 export async function notifySelf(userId: string, content: string): Promise<{ openTaskId?: string }> {
   const text = content.length > 300 ? `${content.slice(0, 300)}…` : content
   const data = await runJson<{ success?: boolean; ok?: boolean; data?: { openTaskId?: string }; result?: { openTaskId?: string } }>([
     'chat', 'message', 'send', '--user', userId, '--content', text,
   ])
   return { openTaskId: data?.data?.openTaskId ?? data?.result?.openTaskId }
+}
+
+/**
+ * DING 强推（应用内/短信/电话）。自发自收消息不触发客户端推送（E2E 用户反馈），
+ * ask/urgent 级用 DING 补推送。userId 为 openDingTalkId。
+ */
+export async function dingSelf(
+  userId: string,
+  content: string,
+  type: 'app' | 'sms' | 'call' = 'app',
+): Promise<{ ok: boolean }> {
+  const text = content.length > 200 ? `${content.slice(0, 200)}…` : content
+  const data = await runJson<{ ok?: boolean; success?: boolean; data?: { success?: boolean } }>([
+    'ding', '+send-personal', '--users', userId, '--content', text, '--type', type, '-y',
+  ])
+  return { ok: data?.ok === true || data?.success === true || data?.data?.success === true }
 }
 
 /** 三路快照（todo / oa / calendar），单次命令各一。单项失败不拖垮整体。 */

@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inlineSummary, parseFrontmatter, resolveSafe, VaultPathError } from './vault'
-import { currentUserId, notifySelf } from './dws'
+import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools']
 
@@ -48,6 +48,9 @@ function def(name: string, description: string, parameters: unknown, execute: (a
 
 /** info 级打扰预算：每日 ≤5 条（ask/urgent 不受限）。进程内计数。 */
 const infoBudget = { date: '', sent: 0 }
+
+/** DING 强推级别（自发自收消息不触发客户端推送，E2E 用户反馈）。可用 env 覆盖，如 "urgent"。 */
+const DING_LEVELS = new Set((process.env.SUN_DING_LEVELS ?? 'ask,urgent').split(','))
 
 export function apply(ctx: Context) {
   ctx.tools.register(def(
@@ -141,7 +144,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(def(
     'sun_notify',
-    '推送钉钉通知给用户（插件代发，不经 LLM）。level=info 攒批（每日≤5）/ ask 立即 / urgent 立即。文本 ≤100 字，结论先行。',
+    '推送钉钉通知给用户（插件代发，不经 LLM）。level=info 攒批（每日≤5，无推送）/ ask 立即+DING 强推 / urgent 立即+DING。文本 ≤100 字，结论先行。',
     {
       type: 'object',
       properties: {
@@ -159,7 +162,17 @@ export function apply(ctx: Context) {
       const uid = await currentUserId()
       const res = await notifySelf(uid, `[Sun·${args.level}] ${args.text}`)
       if (args.level === 'info') infoBudget.sent++
-      return { ok: true, data: res }
+      // ask/urgent 补 DING 强推（自发自收消息无客户端推送）
+      let ding: { ok: boolean } | undefined
+      if (DING_LEVELS.has(args.level)) {
+        try {
+          ding = await dingSelf(uid, `[Sun·${args.level}] ${args.text}`)
+        } catch (e) {
+          ding = { ok: false }
+          ctx.logger?.warn?.(`[sun-space] ding failed: ${String((e as Error).message).slice(0, 120)}`)
+        }
+      }
+      return { ok: true, data: { message: res, ding } }
     },
   ))
 
