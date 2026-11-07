@@ -73,17 +73,25 @@ export function splitFrontmatter(text: string): { meta: Record<string, string | 
   return { meta: parseFrontmatter(text), body: text.slice(m[0].length), hadMeta: true }
 }
 
+/** 本地日期 YYYY-MM-DD（非 UTC）：toISOString 在北京时间 0~8 点会取到昨天（T-05 教训）。 */
+export function localDate(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 本地时间戳 YYYY-MM-DDTHH:mm，无时区后缀：Obsidian/Bases 对带偏移的 datetime 会换算显示差 8 小时（2026-11-08 修复），无后缀则按原文显示。 */
+export function localStamp(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${localDate(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 /** 局部更新 frontmatter 字段（正文不动）——消除"整写覆盖未见正文"的风险（日报实测暴露的缺口）。 */
 export function updateFrontmatter(
   text: string,
   patch: Record<string, string>,
 ): string {
   const { meta, body, hadMeta } = splitFrontmatter(text)
-  // 本地时间（非 UTC）：toISOString 会差 8 小时（T-05 实测教训）
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}+08:00`
-  const merged = { ...meta, ...patch, updated: local }
+  const merged = { ...meta, ...patch, updated: localStamp() }
   const fm = serializeFrontmatter(merged)
   return hadMeta ? `${fm}${body}` : `${fm}\n${body}`
 }

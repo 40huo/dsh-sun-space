@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inlineSummary, parseFrontmatter, resolveSafe, serializeFrontmatter, updateFrontmatter, VaultPathError } from '../src/vault'
+import { inlineSummary, localDate, localStamp, parseFrontmatter, resolveSafe, serializeFrontmatter, updateFrontmatter, VaultPathError } from '../src/vault'
 import { diff, type DwsSnapshot } from '../src/dws'
 
 describe('updateFrontmatter', () => {
@@ -15,6 +15,18 @@ describe('updateFrontmatter', () => {
     const out = updateFrontmatter('---\ntype: daily\n---\nbody', { morning: 'confirmed' })
     expect(out).toContain('morning: confirmed')
     expect(out).toContain('updated: 2026-')
+  })
+  it('stamps updated as naive local time (no timezone suffix — Obsidian 显示差 8h 教训)', () => {
+    const out = updateFrontmatter('---\ntype: task\n---\nbody', {})
+    const m = /updated: (\S+)/.exec(out)
+    expect(m).not.toBeNull()
+    expect(m![1]).not.toMatch(/[+Z]/)
+    expect(m![1]).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+  })
+  it('localDate/localStamp follow local wall clock, not UTC', () => {
+    expect(localDate()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(localDate()).toBe(new Date().toLocaleDateString('sv-SE'))
+    expect(localStamp()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
   })
   it('adds frontmatter to files without one', () => {
     const out = updateFrontmatter('plain body', { type: 'capture' })

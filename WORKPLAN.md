@@ -8,7 +8,7 @@
 
 ## 0. 里程碑总览
 
-> **进度快照（2026-11-08）**：P0 ✅ · P1 主体 ✅（双预设/五工具/Source 轮询/拍板按钮 E2E/ask 卡全链路/DING 推送/时区修复/会话轮换演练）· P2 部分 ✅（工作台派活树 v2 + 直达子会话）· verify.mjs 自检 ✅。IM 轮询延后（待机器人应用）。详见反思 2026-W45。
+> **进度快照（2026-11-08 晚）**：P0 ✅ · P1 主体 ✅ · P2 部分 ✅（工作台 v9 + 直达子会话 + 拍板 + ask 卡全链路）· verify.mjs 自检 ✅（29 用例）。B 批清偿完成：sun_vault_meta 时区显示修复（schemas.md 契约同步）、ARCHITECTURE v0.4 对齐现实（§5.3 原生 schedule 定时 / §8.6 工作台定稿 / §4.1 轮换与 sun_route 薄包装）。下一阶段计划落档本文 §8。IM 入站延后（待机器人应用）。详见反思 2026-W45。
 
 ```mermaid
 gantt
@@ -160,3 +160,42 @@ gantt
 - [ ] 建 vault 骨架 + schemas + runbook/memory 初版（P0-3）
 - [ ] 手动晨报一次，产出当日 Journal 与任务笔记（P0-4）
 - [ ] clone deepseek-harness，明天 D1 从官方教程开跑（P1-1 预习）
+
+---
+
+## 8. 下一阶段执行计划（v2 · 2026-11-08 制定，2026-11-08 ~ 11-21）
+
+> P2 收尾 + P3 启动。周一 11-09 生产首跑不在本计划内（首跑前唯一 quick win：把 SCHEDULE_TEMPLATES 的 ask 卡版 prompt 同步进两个生产 schedule）。每项收尾照旧 `pnpm verify` + 更新 HANDOFF。
+
+### 第一批 · 巡检与自改进收尾（P2 清零，约 2 个投入日）——✅ 2026-11-08 完成
+
+| ID | 任务 | 结果 |
+|----|------|------|
+| W-1 | **Watchdog 巡检上线** | ✅ 双层落地：①原生 schedule `schedule-104a7328`（`0 14,21 * * 1-5` Asia/Shanghai，target 生产会话）承载语义巡检——running >2h 卡死 / need-confirm >2h 积压重推 / Journal 缺环节补跑（仅工作日）；②TS 层（`source.ts`）承载机械职责——轮询连续失败 ≥2 次探活告警（1h 节流，trigger 落盘兜底）+ trigger TTL 7 天清理。测试 29→37。**双路径验收通过**：quiet 路径（周六造无异常场景 → 零通知零写入）+ urgent 路径（造 running/need-confirm 超时夹具各一 → 各发一条 urgent、DING 推送确认、一条消息一个决策点附 task_id、无误重派） |
+| W-2 | **反思固化 + weekly-review 上线** | ✅ 周复盘 schedule `schedule-5b5d6ebd`（周五 17:00，target 生产会话）：任务/Journal 汇总 → `reflections/<周号>.md`（概览含派发预算执行、做得好/不好、runbook 修订建议 diff、下周关注含轮换触发线检视）→ Journal 周复盘小节 → ask 通知 → 人审后 diff 生效（路径同 runbook §7，W45 已实证）。首次真实运行：周五 11-14 17:00 |
+
+### 第二批 · 小债清偿与文档对齐（半天）——✅ 2026-11-08 完成
+
+| ID | 任务 | 结果 |
+|----|------|------|
+| B-1 | sun_vault_meta 时区显示 bug | ✅ 根因：带 `+08:00` 偏移的 datetime 被 Obsidian/Bases 换算显示差 8h（文件值正确）。修法：写入端改无后缀本地时间（`vault.ts` 新增 `localDate`/`localStamp`），顺带清除 `router-tools.ts` 两处 `toISOString()` 取"今天"的 UTC 隐患；vault 存量 24 处时间戳已迁移；schemas.md 契约同步（"日期一律本地时间无时区后缀"）；测试 27→29 |
+| B-2 | ARCHITECTURE.md 对齐现实 | ✅ 升 v0.4：§5.3 定时清单改"DSH 原生 schedule 承载 + Source 只轮询"、§8.6 五 Tab → 工作台 v9 单页定稿、§4.1 补 sun_route 宿主薄包装与周期轮换、§0 图/§2.3/§8.8/§11/附录 B3/B4 同步 |
+| B-3 | 计划落档 + 待办重排 | ✅ 本节 + HANDOFF §五 |
+
+### 第三批 · P3 启动（11-13 起，按价值排序）
+
+| ID | 任务 | 要点 | 验收 |
+|----|------|------|------|
+| P3-1 | 闲时任务 | 归档（done >30d → 60-Archive）、双链补全、周报素材整理；低频原生 schedule 近似"闲时"；skill 写清"只整理不决策" | 首次整理运行，产出可追溯 diff |
+| P3-2 | 需求/缺陷数据源前置调研 | **待用户输入**：公司工单系统是哪家（钉钉项目/云效/Jira/自建）+ 有无 API 权限 → `dws api` raw 或自建只读命令；行政/权限等待是长尾，尽早发起 | 数据源结论 + 接入方案写入 ARCHITECTURE §6.5 |
+
+### 挂起项（不排期，各有阻塞或属观察）
+
+| 项 | 状态 |
+|---|---|
+| IM 三合一（dev connect 入站 + 真推送 + 卡片回调） | 等机器人应用建成，建成即做（约半天） |
+| 生产 schedule prompt 同步 ask 卡版 | 首跑前 5 分钟 quick win |
+| 会话轮换触发线（catalog >50） | 观察，W46 周复盘检视 |
+| TS 层 vault 机械巡检（逾期/Inbox 进轮询） | 先由 W-1 巡检清单覆盖，有真实痛点再做 |
+| Make 式指令 / 语音甩待办 / Channel 分主题 | W45 已记录，P3 后期 |
+| 生活领域分域（finance/health/learning） | backlog，巡检稳定运行一周后评估 |

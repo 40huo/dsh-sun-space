@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { inlineSummary, parseFrontmatter, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
+import { inlineSummary, localDate, parseFrontmatter, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
 import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
@@ -84,7 +84,7 @@ export function apply(ctx: Context) {
           }
         }
         if (args.what === 'journal') {
-          const d = args.date ?? new Date().toISOString().slice(0, 10)
+          const d = args.date ?? localDate()
           const p = resolveSafe(VAULT, `40-Journal/${d}.md`)
           const raw = await readFile(p, 'utf8')
           if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
@@ -157,7 +157,7 @@ export function apply(ctx: Context) {
       required: ['level', 'text'],
     },
     async (args: { level: string; text: string }) => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate()
       if (infoBudget.date !== today) { infoBudget.date = today; infoBudget.sent = 0 }
       if (args.level === 'info' && infoBudget.sent >= 5) {
         return { ok: false, note: 'info 打扰预算已用尽（5/日）——改为写入 Journal 通知流水' }

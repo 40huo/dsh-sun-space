@@ -2,7 +2,8 @@
 
 > **基于 DeepSeek Harness 的个人 AI 融合工作空间**
 >
-> 版本 v0.3 · 2026-11-08 · 状态：P0/P1 已实施，生产运行中
+> 版本 v0.4 · 2026-11-08 · 状态：P0/P1 已实施，生产运行中；P2 收尾进行中
+> **v0.4 变更**：对齐实现现实——业务定时已迁 DSH 原生自动化任务（代码零 cron，§5.3）；侧栏形态定稿为工作台单页（§8.6）；§4.1 补 sun_route 宿主薄包装与 Router 会话周期轮换决策（W45 反思）
 > **交接与现状**：新会话/接手请先读 [HANDOFF.md](HANDOFF.md)（当前状态、启动命令、机制速查、踩坑记录）
 > 本文档所在 workspace（`dsh-sun-space`）承载架构文档与未来的插件/技能代码；知识库本体是独立的 Obsidian vault，下文以 `<VAULT_PATH>` 指代。
 
@@ -10,7 +11,7 @@
 
 ## 0. TL;DR
 
-**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 dws 轮询 Source、`sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 侧栏 Panel**（今日/任务/待确认/通知/设置，借鉴官方原型的 Panel 设计）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
+**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 dws 轮询 Source、`sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 工作台**（client 插件单页：派活树/拍板/初始化检查/入口卡，§8.6）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
 
 ```mermaid
 flowchart TB
@@ -20,7 +21,7 @@ flowchart TB
     subgraph L2["Agent 运行层 · DeepSeek Harness"]
         R["Router 主会话<br/>交互 · 分派 · 落库 · 反思（不亲自执行）"]
         W["Worker ×N<br/>subagent / 工作流<br/>上下文隔离 · 并行执行"]
-        WD["Watchdog<br/>每日巡检（插件定时）"]
+        WD["Watchdog<br/>工作日 14:00/21:00 巡检（原生 schedule）"]
     end
 
     subgraph L3["事件与调度层 · sun-space 插件"]
@@ -37,7 +38,7 @@ flowchart TB
     end
 
     HOOK["Preset 工具白名单 + 命令黑名单<br/>（TS，Agent 外部硬边界）"]
-    P["DSH 侧栏 Panel<br/>今日 / 任务 / 待确认 / 通知"]
+    P["DSH 工作台（client 插件）<br/>派活树 · 拍板 · 初始化检查 · 入口卡"]
 
     U1 -->|"确认 / 调整 / 临时指令"| R
     R -->|"通知 / 确认请求 / 日报（≤100字）"| U1
@@ -92,7 +93,7 @@ flowchart TB
 | 事件与调度层 | `sun-space` 插件 Source（ctx 定时器 + dws 单次命令快照 diff）+ 两级过滤 | 主动性的来源：定时触发 + 环境状态感知（快照 diff） | Super-agent 事件驱动 + Claude Duet 轮询模型 + OpenClaw 心跳 |
 | 连接层 | dws CLI（钉钉官方，为 Agent 设计） | 数据读写、通知、IM 直连 | dws 官方 |
 | 守护层 | Preset 工具白名单 + 命令黑名单（TS）+ 权限分级 | Agent 之外的硬边界，不依赖模型自觉 | dsh-superagent noWait/WORK_TOOLS + Claude Duet 外部检查器 |
-| 交互呈现层 | DSH 侧栏 Panel（client 插件）+ 确认卡片 + 钉钉通知中心 | agent 工作状态可视、随时随地确认、通知可回溯 | dsh-superagent Panel + Claude Duet Tasks/审批卡 |
+| 交互呈现层 | DSH 工作台（client 插件单页）+ 确认卡片 + 钉钉通知中心 | agent 工作状态可视、随时随地确认、通知可回溯 | dsh-superagent Panel + Claude Duet Tasks/审批卡 |
 
 **关键取舍：Router 与 Worker 分离，且在工具层强制。** Router 不配备执行心态——它只做交互与分派，且 `sun-router` 预设在工具层只保留分派/读状态/写库/通知/确认四类应用工具，**无 Bash、无文件、无 web**，物理上无法揽活；Worker 反之只保留执行工具、无对外通信工具（同 dsh-superagent 原型：Router 仅 14 个 `orchestrator_*` 应用工具，Worker 走 `WORK_TOOLS` 白名单且不能面向人发言，见 §4.1）。因此单个常驻 Router 会话即可维持跨任务的连续上下文；Worker 各自上下文隔离、并行推进，结论统一回流 Router，由 Router 以统一人格对外发言。
 
@@ -117,7 +118,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
 | 定时触发（晨报/日报/心跳/巡检） | Source 内 `ctx` 定时器，随 DSH Web 进程常驻 | TS（数行） |
 | 环境变化感知 | Source 单次 exec dws 查询命令 + vault 状态 diff（无长连接）→ 产生 Trigger | TS |
 | 钉钉通知/确认推送 | `notify.ts` 直接 exec `dws chat`，**不经 LLM**（零 token、零延迟） | TS |
-| 侧栏 Panel | client 插件注册侧栏入口 + 主面板 + Plugin Manager 页面（React，见 §8.6） | TS/TSX |
+| 工作台 | client 插件注册侧栏入口 + 单页工作台（初始化检查/派活树/拍板/入口卡，见 §8.6） | JS（client） |
 | 能力封装（晨报/日报/反思） | skills（Markdown，随 bundle 分发）+ `prompts/` 系统提示词 | Markdown |
 | 钉钉数据读写 | dws CLI（Worker 经 Bash 调用；Source 经 exec 调用） | 官方 CLI |
 | IM→Agent 直连 | `dws dev connect` | 待验证（§6.4） |
@@ -198,6 +199,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
   - **无** Bash、文件、web、dws 直调——执行必须经 `sun_route` 交给 Worker。
 - **行为约束（系统提示词，随插件 `prompts/` 分发，见附录 B）**：Worker 结论必注明出处；IM ≤100 字、只问直接问题，仅在"需要决策或验收"时打扰；未经确认不得请求任何 always-ask 级动作（白名单会拒绝越权请求）。
 - **上下文组成**：`90-Meta/memory.md` + `90-Meta/runbook.md` + 当日 `40-Journal` + 当前任务状态表。历史细节靠 vault 链式召回。
+- **会话机制（W45 实证定稿）**：Router 单会话 + compaction 保持；`sun_route` 在宿主是**薄包装**——直调官方 `startActivation`（注意运行时 lib 的签名是 `spec.request` 包装，与 repo src 有漂移，以构建产物为契约源），子会话以 task_id 命名并把 childId 回写任务笔记 `session` 字段（工作台卡片直达）。新增**周期轮换**：会话年龄 >30 天或 subagentCatalog >50 条时，晨报自检附轮换建议（起草交接摘要 → 新会话冷启动 → schedule target 切换，人批后执行），已写入 runbook v0.3 §10。
 
 > 证据（源码级）：dsh-superagent 原型 Router = 14 个 `orchestrator_*` 应用工具（`orchestrator_read / orchestrator_route / orchestrator_eval / orchestrator_reply / orchestrator_ticket_retry` 等，见 `src/app/tools/main.ts`）+ 7 个宿主工具（`skill, bash, read, read_image, job_*`）——其中 `bash` 被 noWait 守卫阉割为巡检级（禁 `sleep`、≤30s、job 等待 ≤5s，超时返回 `NO_WAIT`）。**本架构的 `sun-router` 更严：完全不配 bash**，dws 数据一律经 Source 与 Worker。原型的工具面由 `tests/model-surface.spec.ts` 固化。
 
@@ -250,7 +252,7 @@ Watchdog 本身也是 LLM 会话：可以用自然语言询问它"为什么今�
 | 定时 Trigger | Source 内 ctx 定时器（cron 语义，App 重启后随插件恢复） | 08:45 晨报、18:30 日报、每小时心跳、周五 17:00 周复盘、14:00/21:00 Watchdog |
 | 快照 Trigger | Source **定时单次 exec** dws 查询命令，与 vault 中已有 `source_id` 状态 diff | 新待办、新审批、待办状态变更、日历变化 |
 
-**为何不做长连接（设计决策）**：① 零常驻子进程——无需 launchd/守护脚本，凭证、重试、生命周期全部随单次命令走；② 幂等可重试——每次都是全量快照，掉线期间不存在"错过"，恢复后第一次轮询自动补齐；③ **轮询在 TS 层执行，零 LLM 成本**——只有 diff 出新 Trigger 才进入 Router 消耗 token；④ 与 Claude Duet 同款模型——按固定间隔检查账户，实践证明对个人场景足够。代价是新审批的感知延迟 ≤ 一个轮询间隔（默认 1 小时，可加密至 30 分钟，纯程序层几乎无成本）。`dws event consume` 长连接留作 P3 可选实验（支持 `--duration` 有界窗口），核心链路不依赖它。
+**为何不做长连接（设计决策）**：① 零常驻子进程——无需 launchd/守护脚本，凭证、重试、生命周期全部随单次命令走；② 幂等可重试——每次都是全量快照，掉线期间不存在"错过"，恢复后第一次轮询自动补齐；③ **轮询在 TS 层执行，零 LLM 成本**——只有 diff 出新 Trigger 才进入 Router 消耗 token；④ 与 Claude Duet 同款模型——按固定间隔检查账户，实践证明对个人场景足够。代价是新审批的感知延迟 ≤ 一个轮询间隔（实现取 30 分钟，纯程序层几乎无成本）。`dws event consume` 长连接留作 P3 可选实验（支持 `--duration` 有界窗口），核心链路不依赖它。
 
 > **诚实边界**：插件随 DSH Web 进程常驻，桌面 App 在线即工作。Mac 设置"防止指定时段休眠"即可覆盖工作时间。这对应 Super-agent"存算分离"的本地变体——接受当前阶段单机在线的简化；云托管是 P3 之后的选项。
 
@@ -261,15 +263,19 @@ Watchdog 本身也是 LLM 会话：可以用自然语言询问它"为什么今�
 
 新增/调整"什么情况下该理我"的**语义策略**永远是改一段 Markdown（runbook）；轮询周期、白名单等机械参数在插件配置里。
 
-### 5.3 插件内定时清单（Source 注册的 ctx 定时器，默认值均可调）
+### 5.3 定时清单（实现定稿：业务定时全部由 DSH 原生"自动化任务"承载，代码零 cron）
 
-| 名称 | 触发 | 行为 |
-|------|------|------|
-| morning-brief | 工作日 08:45 | 见 §7.2 晨间规划 |
-| heartbeat | 工作日 9–21 点每小时 | 轻巡：dws 快照 diff（新待办/审批/日历变化）、Inbox 未处理、逾期任务；刷新 Panel；**值得说才开口** |
-| watchdog | 工作日 14:00 / 21:00 | §4.3 巡检 |
-| evening-report | 工作日 18:30 | 见 §7.2 日报与反思 |
-| weekly-review | 周五 17:00 | 周报 + runbook 建议修订 + 归档整理（可排到闲时任务执行） |
+> v0.4 实现决策（W45 反思"工作台 v9 精简"同款洞察）：定时是平台能力，插件不再自建 ctx 定时器清单——晨报/日报等以**原生自动化任务**（cron + prompt 指向 Router 会话）创建，UI 可视可启停；`sun-space` 插件代码只保留 Source 的 dws 轮询（TS 层机械 diff，零 LLM）。
+
+| 名称 | 触发 | 承载 | 行为 | 状态 |
+|------|------|------|------|------|
+| morning-brief | 工作日 08:45 | DSH 原生 schedule | §7.2 晨间规划 | ✅ 生产运行（2026-11-09 首跑） |
+| evening-report | 工作日 18:30 | DSH 原生 schedule | §7.2 日报与反思 | ✅ 生产运行 |
+| watchdog | 工作日 14:00 / 21:00 | DSH 原生 schedule | §4.3 语义巡检（running 超时 / Journal 缺环节 / need-confirm 积压）；凭证探活与 trigger TTL 清理在插件轮询 TS 层 | ✅ 2026-11-08 上线（schedule-104a7328），双路径验收通过 |
+| weekly-review | 周五 17:00 | DSH 原生 schedule | 周报 + runbook 修订建议 + reflections/当周.md | ✅ 2026-11-08 上线（schedule-5b5d6ebd），11-14 首跑 |
+| dws 轮询 | 每 30 分钟 | 插件 Source（`ctx.interval`） | dws 快照 diff → 新待办/新审批写 trigger 队列 + info 通知（§5.1） | ✅ 运行中 |
+
+> 心跳（§8.1）不再单设每小时定时器：dws 侧由 30 分钟轮询覆盖（比小时心跳更密且零 LLM），vault 侧（Inbox 未处理、逾期任务）并入 Watchdog 巡检清单——**值得说才开口**原则不变。
 
 ---
 
@@ -316,7 +322,7 @@ dws event consume todo_task_changed --duration 10m -f ndjson
 dws dev connect --channel auto --robot-client-id <id> --robot-client-secret <secret>
 ```
 
-> **待验证项**：`dws dev connect` 官方声明接入 Claude Code / Codex 等本地 AI CLI；它与 Harness 桌面的对接协议需在 P2 实测。若不兼容，IM 入口退路是"钉钉机器人纯通知 + 指令经桌面会话或下次轮询带入"（功能等价，响应延迟 = heartbeat 间隔）——这是整个架构唯一需要 P2 实证的外部协议假设。
+> **待验证项**：`dws dev connect` 官方声明接入 Claude Code / Codex 等本地 AI CLI；它与 Harness 桌面的对接协议需在 P2 实测。若不兼容，IM 入口退路是"钉钉机器人纯通知 + 指令经桌面会话或下次轮询带入"（功能等价，响应延迟 = 轮询间隔 30 分钟）——这是整个架构唯一需要 P2 实证的外部协议假设。
 
 ### 6.5 缺口与扩展点
 
@@ -337,7 +343,7 @@ sun-space/
 │   ├── sessions.ts    # sun-router / sun-worker 预设 + 工具白名单 + 命令黑名单（§4.1/§4.2）
 │   ├── vault.ts       # 知识层唯一写入路径（串行化；Journal 由 Router 独占）
 │   ├── notify.ts      # 钉钉通知/确认推送（exec dws chat，不经 LLM；打扰分级在此强制）
-│   └── client/        # 侧栏 Panel：index.tsx（侧栏入口）/ app.tsx（面板）/ route.ts
+│   └── client.js      # 工作台（单页）：初始化检查 / 派活树 / 拍板 / 入口卡（§8.6）
 ├── skills/            # morning-brief / evening-report / reflection（Markdown）
 └── prompts/           # Router / Worker 系统提示词
 ```
@@ -501,23 +507,22 @@ tags: [work, defect, payment]
 | **never-do**（即使确认也不做） | 自动连续审批、代我签电子文件、访问他人账号 | — |
 | **可放行**（默认自由） | 读一切我可见的数据、vault 读写、`--dry-run` 写预览、资料检索与草拟 | 结论注明出处 |
 
-### 8.6 侧栏 Panel（DSH 原生 client 插件）
+### 8.6 工作台（DSH 原生 client 插件 · 形态定稿 v9）
 
-会话式 UI 不适合 personal agent：人需要一眼看到"谁在干什么、什么在等我"。**Panel 是 `sun-space` 插件的 client 部分**，在 DeepSeek Harness 侧栏注册入口 + 主面板，并在 Plugin Manager 中提供管理页（与官方原型 `src/client/index.tsx` 同款注册方式）。
+会话式 UI 不适合 personal agent：人需要一眼看到"谁在干什么、什么在等我"。**呈现面是 `sun-space` 插件的 client 部分**（单页工作台，非多 Tab 面板）。
 
-**五个 Tab**（对照原型六 Tab 裁剪）：
+> v0.4 定稿：初版规划的"五 Tab 面板"在实施中被用户驱动的迭代取代——v9 精简的原则是**平台已有的呈现不重复造**（定时管理跳原生"自动化任务"面板，Journal 用 Obsidian 打开）。工作台只保留平台没有的部分：
 
-| Tab | 内容 |
-|-----|------|
-| 今日 | 晨报计划 / 时间线 / 日报草稿与审核状态 |
-| 任务 | 任务看板（proposed → running → need-confirm → done/blocked），点开即任务笔记 |
-| 待确认 | 全部待确认卡片：计划确认、执行中确认点、日报审核——一键批准/驳回并回写 |
-| 通知 | 当天 info/ask/urgent 流水（镜像 Journal，不依赖当时在线） |
-| 设置 | 数据源、轮询周期、打扰分级阈值、钉钉绑定 |
+| 区块 | 内容 |
+|------|------|
+| 初始化检查 | 三行自检（vault 可写 / 依赖插件 roster / Router 会话在位）+ 引导按钮；失败路径可点修复 |
+| 派活树 | 任务卡片（proposed → running → need-confirm → done/blocked）；need-confirm 琥珀色标「等你决策 →」，**点击直达对应会话**（Router 或 Worker 子会话，经任务笔记 `session` 字段） |
+| 拍板按钮 | Duet 借鉴：工作台对运行中任务一键放行/终止（banner 两级路径，防误触） |
+| 入口卡 | 自动化任务面板（定时管理）+ 当日 Journal（Obsidian） |
 
-**设计原则**沿用原型 Panel 七原则：quiet by default（健康状态不占空间，细节进 tooltip）、一处一概念、与 DSH 设计语言一致。Obsidian Bases 看板（§3.4）保留为持久面——同一份 frontmatter 数据，两个视图。
+**设计原则**沿用原型 Panel 七原则：quiet by default、一处一概念、与 DSH 设计语言一致；决策不在工作台真空环境做（§8.7）。Obsidian Bases 看板（§3.4）保留为持久面——同一份 frontmatter 数据，两个视图。
 
-> 佐证：dsh-superagent-prototype 专门有 `docs/005-panel`，其 Panel 同样以侧栏视图呈现（Overview/Source/Trigger/Eval/Execution/Settings 六 Tab），验证了"super-agent 需要会话之外的呈现面"这一判断。
+> 佐证：dsh-superagent-prototype 的 `docs/005-panel` 验证了"super-agent 需要会话之外的呈现面"；本项目的差异是收敛为单页 + 平台原生入口，避免双份真相源。
 
 ### 8.7 确认卡片
 
@@ -530,7 +535,7 @@ tags: [work, defect, payment]
 
 ### 8.8 通知中心
 
-钉钉是主信道（分级见 §8.2）；Panel 的"今日消息"区镜像当天全部 info/ask/urgent 流水（落在当日 Journal），人任何时候回来都能一眼补齐错过的通知——**通知不依赖"当时在线"**。
+钉钉是主信道（分级见 §8.2）；当天全部 info/ask/urgent 流水落在当日 Journal 的「通知流水」区（工作台 Journal 入口卡一键可达），人任何时候回来都能一眼补齐错过的通知——**通知不依赖"当时在线"**。
 
 ---
 
@@ -572,7 +577,7 @@ tags: [work, defect, payment]
 |------|------|---------|
 | **P0 骨架（约 1 天）** | 建 vault 目录 + memory/runbook 初始内容；`dws auth login` 登录开通；纯对话手动跑一次 morning-brief（无插件） | 晨报产出 Journal 计划区 + 任务笔记，我口头确认后手动派发 |
 | **P1 插件闭环（约 1 周）** | `sun-space` 插件骨架：`apply` 入口 + `sessions.ts` 双预设白名单 + dws Source（定时/轮询）+ `notify.ts`；dws 数据全通；任务落库流程固化 | 连续 3 个工作日无人值守完成"晨报→确认→执行→落库→日报"；Router 全程未亲自执行（工具层保证） |
-| **P2 交互与反思（约 1 周）** | client 侧栏 Panel（五 Tab）；确认卡片流（§8.7）；日报反馈→反思→runbook 修订闭环；实测 `dws dev connect` 协议（§6.4）；Watchdog | 一次日报意见切实改变次日行为；一次"轮询发现新审批并主动处理"；Panel 一屏看清当日全局 |
+| **P2 交互与反思（约 1 周）** | client 工作台（§8.6 单页定稿）；确认卡片流（§8.7）；日报反馈→反思→runbook 修订闭环；实测 `dws dev connect` 协议（§6.4，待机器人应用）；Watchdog | 一次日报意见切实改变次日行为；一次"轮询发现新审批并主动处理"；工作台一屏看清当日全局 |
 | **P3 扩展（持续）** | 需求/缺陷数据源接入（§6.5）；生活领域（财务/健康/学习）分域扩展；闲时整理任务（vault 索引优化、双链补全）；（可选）`dws event consume` 有界窗口实验压低感知延迟 | 非工作领域同样形成"发现→规划→执行→沉淀"闭环 |
 
 ---
@@ -649,15 +654,14 @@ description: 晨间简报：拉取钉钉待办/审批/需求缺陷，生成今�
 5. dws chat 推送 ≤100 字摘要 + 清单，等待确认；等待期间投机准备（只读+草拟）
 ```
 
-**B3. 插件内定时注册（`sources/dws.ts`，示意）**
+**B3. 定时承载（实现定稿：DSH 原生自动化任务，代码零 cron）**
 
-```ts
-// ctx 定时器随 DSH Web 进程常驻；cron 语义；默认值可在 Panel 设置 Tab 调整
-registerCron(ctx, '45 8 * * 1-5',  morningBrief)   // 晨报：拉快照 → Trigger
-registerCron(ctx, '0 9-21 * * 1-5', heartbeat)     // 心跳：轮询 diff → Trigger + 刷 Panel
-registerCron(ctx, '0 14,21 * * 1-5', watchdog)     // 巡检
-registerCron(ctx, '30 18 * * 1-5', eveningReport)  // 日报与反思
-registerCron(ctx, '0 17 * * 5',    weeklyReview)   // 周复盘
+```text
+业务定时（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00）
+  → DSH 原生「自动化任务」（cron + prompt，target = Router 会话），UI 可视可启停
+
+插件 Source（sources/dws.ts）只保留轮询——TS 层机械 diff，零 LLM：
+  ctx.interval(() => poll(), 30 * 60_000)   // dws 快照 → 对照上次快照 diff → trigger 队列 + info 通知
 ```
 
 **B4. 插件入口与预设（`src/index.ts` / `src/sessions.ts`，示意）**
@@ -670,10 +674,9 @@ export const name = 'sun-space'
 export const inject = ['sessions', 'tools']   // 声明依赖，就绪后才 apply
 
 export function apply(ctx: Context) {
-  ctx.plugin(require('./sources/dws'))  // 定时 + 轮询 Source
-  ctx.plugin(require('./sessions'))     // 双预设与工具白名单
-  ctx.plugin(require('./notify'))       // 钉钉通知（不经 LLM）
-  ctx.plugin(require('./client'))       // 侧栏 Panel
+  ctx.plugin(require('./source'))         // dws 轮询 Source（业务定时在 DSH 原生 schedule，见 B3）
+  ctx.plugin(require('./router-tools'))   // sun_* 应用工具（5 个）
+  ctx.plugin(require('./worker-vault'))   // Worker 受控产物落库通道
 }
 ```
 
