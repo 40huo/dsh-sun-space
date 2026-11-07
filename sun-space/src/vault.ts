@@ -79,7 +79,11 @@ export function updateFrontmatter(
   patch: Record<string, string>,
 ): string {
   const { meta, body, hadMeta } = splitFrontmatter(text)
-  const merged = { ...meta, ...patch, updated: new Date().toISOString().slice(0, 16) + '+08:00' }
+  // 本地时间（非 UTC）：toISOString 会差 8 小时（T-05 实测教训）
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}+08:00`
+  const merged = { ...meta, ...patch, updated: local }
   const fm = serializeFrontmatter(merged)
   return hadMeta ? `${fm}${body}` : `${fm}\n${body}`
 }
