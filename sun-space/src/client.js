@@ -171,17 +171,21 @@ window.__ModuleLoader__.load({
                 borderTopLeftRadius: 6,
               } }),
               h('div', { key: 'card', title: '点击打开对应会话', onClick: () => {
-                try {
-            // 实测：子会话跳转需先有父会话上下文（从工作台直开子会话会被静默回退到父）
-            const target = t.session || SCOPE_SESSION
-            hostCtx.uiWorkspace.openSession(SCOPE_SESSION)
-            window.__sunJumpLog = window.__sunJumpLog || []
-            window.__sunJumpLog.push({ at: Date.now(), target })
-            setTimeout(() => {
-              window.__sunJumpLog.push({ at: Date.now(), fired: true, target })
-              try { hostCtx.uiWorkspace.openSession(target) } catch (e) { window.__sunJumpLog.push({ err: String(e) }) }
-            }, 1600)
-          } catch (e) { D.errors.push('openSession: ' + String(e)) }
+                // 直接跳子会话；若未跳走（组件仍挂载）自动重试，耗尽才回退主会话——避免闪主会话
+          const target = t.session || SCOPE_SESSION
+          window.__sunJumpLog = window.__sunJumpLog || []
+          let attempts = 0
+          const tryOpen = () => {
+            if (attempts >= 5) {
+              try { hostCtx.uiWorkspace.openSession(SCOPE_SESSION) } catch (e) { D.errors.push('fallback: ' + String(e)) }
+              return
+            }
+            attempts++
+            window.__sunJumpLog.push({ at: Date.now(), attempt: attempts, target })
+            try { hostCtx.uiWorkspace.openSession(target) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+            setTimeout(tryOpen, 500)
+          }
+          tryOpen()
               }, style: {
                 cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 10,
