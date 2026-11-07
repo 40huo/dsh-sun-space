@@ -52,11 +52,11 @@ const infoBudget = { date: '', sent: 0 }
 export function apply(ctx: Context) {
   ctx.tools.register(def(
     'sun_read',
-    '读取工作空间状态：journal（当日日记）| tasks（任务列表与状态）| runbook（行为规则）| memory（关于用户）| note（任意 vault 文件的 Inline 摘要）。',
+    '读取工作空间状态：journal（当日日记）| tasks（任务列表与状态）| triggers（Source 触发队列，最新在前）| runbook（行为规则）| memory（关于用户）| note（任意 vault 文件的 Inline 摘要）。',
     {
       type: 'object',
       properties: {
-        what: { type: 'string', enum: ['journal', 'tasks', 'runbook', 'memory', 'note'] },
+        what: { type: 'string', enum: ['journal', 'tasks', 'triggers', 'runbook', 'memory', 'note'] },
         date: { type: 'string', description: 'journal 用：YYYY-MM-DD，默认今天' },
         path: { type: 'string', description: 'note 用：vault 相对路径' },
       },
@@ -64,6 +64,21 @@ export function apply(ctx: Context) {
     },
     async (args: { what: string; date?: string; path?: string }) => {
       try {
+        if (args.what === 'triggers') {
+          const dir = resolveSafe(VAULT, '90-Meta/triggers')
+          try {
+            const files = (await readdir(dir)).filter(f => f.endsWith('.json')).sort().reverse().slice(0, 10)
+            const triggers = []
+            for (const f of files) {
+              const raw = await readFile(join(dir, f), 'utf8')
+              const parsed = JSON.parse(raw) as { label?: string; payload?: unknown }
+              triggers.push({ file: f, label: parsed.label, payload: parsed.payload })
+            }
+            return { ok: true, data: { count: triggers.length, triggers } }
+          } catch {
+            return { ok: true, data: { count: 0, triggers: [] } }
+          }
+        }
         if (args.what === 'journal') {
           const d = args.date ?? new Date().toISOString().slice(0, 10)
           const p = resolveSafe(VAULT, `40-Journal/${d}.md`)

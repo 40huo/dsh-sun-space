@@ -3,6 +3,17 @@
 # 双预设：sun-router（只分派）/ sun-worker（只执行）。工具白名单由组合本身保证
 # （Spike A 结论），guard 由 worker-guard 在组合内挂载。
 - insert:
+    # dws CLI 需写自身数据锁（~/.dws/.data.lock）——沙箱白名单放行（E2E R4 发现；
+    # Router 临场自愈方案为 DWS_CONFIG_DIR 临时目录，此为正式修复，二选一即可）。
+    # 覆盖行必须带 name 且 config 需完整复刻 base（否则行被禁用，连锁 15 服务失效）
+    - id: sandbox-policy
+      name: '@deepseek-ai/dsh-sandbox-policy'
+      config:
+        mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+        workspaceRoot: !!js process.cwd()
+        additionalWritableRoots:
+          - /Users/40huo/.dws
+
     - id: sun-space
       name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/index.mjs'
 
