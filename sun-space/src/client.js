@@ -208,6 +208,7 @@ window.__ModuleLoader__.load({
               D.mainRegistered = true
               return ctx.slots.register({ name: 'main', key: PANEL_ID }, Workbench)
             })
+            window.__sunOpenSession = (id) => { try { hostCtx.uiWorkspace.openSession(id); return 'called' } catch (e) { return 'ERR: ' + String(e) } }
             D.phase = 'apply-done'
           } catch (e) {
             D.errors.push('apply: ' + String(e && e.stack || e))
