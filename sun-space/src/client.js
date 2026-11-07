@@ -95,6 +95,8 @@ window.__ModuleLoader__.load({
       }
 
       function Workbench() {
+        const aliveRef = React.useRef(true) // 卸载 = 跳转成功信号，重试停止
+        React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], sessions: [], error: null })
         const reload = React.useCallback(() => {
           setState(s => ({ ...s, loading: true, error: null }))
@@ -176,14 +178,15 @@ window.__ModuleLoader__.load({
           window.__sunJumpLog = window.__sunJumpLog || []
           let attempts = 0
           const tryOpen = () => {
-            if (attempts >= 5) {
+            if (!aliveRef.current) return // 已跳走（工作台卸载），停止重试
+            if (attempts >= 12) {
               try { hostCtx.uiWorkspace.openSession(SCOPE_SESSION) } catch (e) { D.errors.push('fallback: ' + String(e)) }
               return
             }
             attempts++
             window.__sunJumpLog.push({ at: Date.now(), attempt: attempts, target })
             try { hostCtx.uiWorkspace.openSession(target) } catch (e) { D.errors.push('openSession: ' + String(e)) }
-            setTimeout(tryOpen, 500)
+            setTimeout(tryOpen, 800)
           }
           tryOpen()
               }, style: {
