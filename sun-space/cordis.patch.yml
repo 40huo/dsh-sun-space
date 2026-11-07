@@ -4,7 +4,7 @@
 # （Spike A 结论），guard 由 worker-guard 在组合内挂载。
 - insert:
     - id: sun-space
-      name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/src/index.ts'
+      name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/index.mjs'
 
     # ============ sun-router：交互 · 分派 · 落库 · 反思（无执行工具） ============
     - id: sun-router-preset
@@ -32,7 +32,7 @@
             name: '@deepseek-ai/dsh-time-context'
           # 4 个 sun_* 工具
           - id: sun-router-tools
-            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/src/router-tools.ts'
+            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/router-tools.mjs'
           # sun_route：官方委派工具实例，子代一律 sun-worker 预设
           - id: sun-route
             name: '@deepseek-ai/dsh-tool-subagent'
@@ -104,7 +104,7 @@
               searchTimeoutMs: 60000
           # BLOCKED + noWait 守卫
           - id: sun-worker-guard
-            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/src/worker-guard.ts'
+            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/worker-guard.mjs'
           # 受控产物落库通道（50-Tasks/artifacts/<task_id>/）
           - id: sun-worker-vault
-            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/src/worker-vault.ts'
+            name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/worker-vault.mjs'

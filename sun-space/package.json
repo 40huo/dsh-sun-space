@@ -5,11 +5,11 @@
   "type": "module",
   "description": "Sun Space — personal super-agent on DeepSeek Harness (router/worker presets, dws source, vault, panel)",
   "exports": {
-    ".": "./src/index.ts",
+    ".": "./lib/index.mjs",
     "./client": "./src/client.js",
-    "./router-tools": "./src/router-tools.ts",
-    "./worker-guard": "./src/worker-guard.ts",
-    "./source": "./src/source.ts"
+    "./router-tools": "./lib/router-tools.mjs",
+    "./worker-guard": "./lib/worker-guard.mjs",
+    "./worker-vault": "./lib/worker-vault.mjs"
   },
   "dsh": {
     "bundle": {
@@ -29,10 +29,19 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "tsdown": "^0.23.5",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   },
   "scripts": {
-    "test": "vitest run"
-  }
+    "test": "vitest run",
+    "build": "tsdown"
+  },
+  "files": [
+    "lib",
+    "src/client.js",
+    "cordis.patch.yml",
+    "skills",
+    "prompts"
+  ]
 }
