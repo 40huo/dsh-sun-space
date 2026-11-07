@@ -54,6 +54,17 @@ window.__ModuleLoader__.load({
         workspaceFileScopeId: SCOPE_SESSION, path, range: { limit },
       }).then(v => v.text || '')
 
+      // Duet 式拍板：按钮 = 给 Router 会话递消息（官方 session/prompt 通道，状态变更仍由 Router 落库）
+      async function promptToRouter(text) {
+        return gateway('session/prompt', { request: {
+          requestId: 'sun-' + Math.random().toString(36).slice(2, 10),
+          sessionId: ROUTER_SESSION,
+          mode: 'queue',
+          content: [{ type: 'text', text }],
+          clientTimeZone: 'Asia/Shanghai',
+        } })
+      }
+
       async function loadTasks() {
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
         let journalText = ''
@@ -66,6 +77,7 @@ window.__ModuleLoader__.load({
             if (fm.id) tasks.push({
               id: fm.id, status: fm.status || 'proposed', source: fm.source || '',
               priority: fm.priority || 'medium', journal: fm.journal || '', session: fm.session || '',
+              artifacts: fm.artifacts || [],
             })
           } catch {}
         }
@@ -174,6 +186,11 @@ window.__ModuleLoader__.load({
               h('span', { key: 's', style: { fontSize: 12, color: STATUS_META[t.status]?.color } }, STATUS_META[t.status]?.label || t.status),
               h('span', { key: 'src', style: { fontSize: 11, opacity: 0.55 } }, t.source),
               t.journal ? h('span', { key: 'j', style: { fontSize: 11, opacity: 0.45, fontFamily: 'monospace' } }, t.journal) : null,
+              (t.artifacts && t.artifacts !== '[]' && t.artifacts !== '') ? h('span', { key: 'ar', title: String(t.artifacts), style: { fontSize: 11, opacity: 0.55 } }, '📦') : null,
+              t.status === 'need-confirm' ? [
+                h('button', { key: 'ok', onClick: (ev) => { ev.stopPropagation(); promptToRouter(`用户已在工作台批准 ${t.id}：按计划继续执行，并用 sun_vault_meta 更新状态与 confirmations`).catch(() => {}) }, style: { fontSize: 11, padding: '3px 8px', borderRadius: 5, border: '1px solid rgba(87,178,106,0.5)', background: 'transparent', color: '#57b26a', cursor: 'pointer' } }, '✓ 批准'),
+                h('button', { key: 'no', onClick: (ev) => { ev.stopPropagation(); promptToRouter(`用户已在工作台驳回 ${t.id}：status 置 dropped 并在 Journal 记录原因`).catch(() => {}) }, style: { fontSize: 11, padding: '3px 8px', borderRadius: 5, border: '1px solid rgba(232,99,77,0.5)', background: 'transparent', color: '#e8634d', cursor: 'pointer' } }, '✕ 驳回'),
+              ] : null,
             ]),
           ])),
           tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
