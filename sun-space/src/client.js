@@ -54,6 +54,71 @@ window.__ModuleLoader__.load({
         workspaceFileScopeId: SCOPE_SESSION, path, range: { limit },
       }).then(v => v.text || '')
 
+      // ===== 初始化检查（用户要求：①插件依赖②知识库目录+初始化③Router 会话落在知识库目录）=====
+      async function runInitChecks() {
+        const c = { vault: false, presets: false, routerSession: null, notes: [] }
+        // ① 知识库：读 runbook 探测
+        try { await readVaultFile(`${VAULT}/90-Meta/runbook.md`, 10); c.vault = true } catch {
+          c.notes.push(`知识库未就绪（当前配置路径 ${VAULT}）：① 用 Obsidian 打开/创建该目录 ② 完成 90-Meta 骨架初始化（可让任意 Router 会话执行"初始化知识库"指令） ③ 重启实例后重新检查`)
+        }
+        // ② 依赖插件：预设 roster 健康 = 智能体协作链路可用（missing/broken → 插件面板手动开启）
+        try {
+          const v = await gateway('agentPresets/list', {})
+          const presets = v?.presets ?? []
+          const r = presets.find(p => p.id === 'sun-router')
+          const w = presets.find(p => p.id === 'sun-worker')
+          c.presets = !!(r && !r.broken && w && !w.broken)
+          if (!c.presets) c.notes.push('Sun 预设缺失或损坏 → 打开插件面板，手动开启 sun-space / 智能体协作相关插件后重启实例')
+        } catch {
+          c.presets = false
+          c.notes.push('预设服务不可达 → 确认 Harness 实例在线、插件已启用')
+        }
+        // ③ Router 会话：默认创建在知识库目录下
+        try {
+          const v = await gateway('session/list', { _request: {} })
+          const list = v?.sessions ?? v?.items ?? v
+          const arr = Array.isArray(list) ? list : Object.values(list || {})
+          const mine = arr.find(s => s.projections?.values?.agentPreset === 'sun-router')
+          c.routerSession = mine ? mine.sessionId : null
+          if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」，将创建在知识库目录（cwd=' + VAULT + '，sun-router 预设）')
+        } catch {
+          c.notes.push('会话列表不可达 → 重试或检查实例')
+        }
+        return c
+      }
+
+      async function createRouterSession() {
+        // Router 会话默认创建在知识库目录下
+        return gateway('session/create', { request: { cwd: VAULT, agentPreset: 'sun-router' } })
+      }
+
+      function InitPanel({ checks, onRetry }) {
+        const rows = [
+          { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${VAULT}` },
+          { ok: checks.presets, title: '② 依赖插件（智能体协作 / 子智能体）', desc: checks.notes.find(n => n.includes('预设') || n.includes('插件')) || '已就绪', action: checks.presets ? null : 'plugins' },
+          { ok: !!checks.routerSession, title: '③ Router 会话（知识库目录）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : (checks.notes.find(n => n.includes('Router 会话')) || '不存在'), action: checks.presets && !checks.routerSession ? 'create-router' : null },
+        ]
+        return h('div', null, [
+          h('p', { key: 'h', style: { fontWeight: 600, fontSize: 14, margin: '0 0 12px' } }, '初始化检查'),
+          ...rows.map(r => h('div', { key: r.title, style: { ...cardStyle(r.ok ? '#57b26a' : '#e8a24d'), alignItems: 'flex-start', marginBottom: 8 } }, [
+            h('span', { key: 'dot', style: { width: 10, height: 10, borderRadius: 5, background: r.ok ? '#57b26a' : '#e8a24d', display: 'inline-block', marginTop: 4 } }),
+            h('div', { key: 'b', style: { flex: 1 } }, [
+              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13 } }, (r.ok ? '✓ ' : '✗ ') + r.title),
+              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, r.desc),
+            ]),
+            r.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
+            r.action === 'create-router' ? h('button', { key: 'a', onClick: async () => {
+              try {
+                const v = await createRouterSession()
+                const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
+                if (sid) hostCtx.uiWorkspace.openSession(sid)
+              } catch (e) { D.errors.push(String(e)) }
+            }, style: btnStyle }, '创建 Router 会话') : null,
+          ])),
+          h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),
+        ])
+      }
+
       async function loadTasks() {
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
         let journalText = ''
@@ -89,6 +154,7 @@ window.__ModuleLoader__.load({
         ])
       }
 
+      const btnStyle = { fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' }
       const cardStyle = (borderColor) => ({
         display: 'flex', alignItems: 'center', gap: 10,
         border: `1px solid ${borderColor || 'rgba(128,128,128,0.25)'}`,
@@ -106,6 +172,13 @@ window.__ModuleLoader__.load({
       }
 
       function Workbench() {
+        const [init, setInit] = React.useState({ checking: true, checks: null })
+        const runChecks = React.useCallback(() => {
+          setInit({ checking: true, checks: null })
+          runInitChecks().then(checks => setInit({ checking: false, checks }))
+        }, [])
+        React.useEffect(() => { runChecks() }, [runChecks])
+        const allReady = !!(init.checks && init.checks.vault && init.checks.presets)
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
@@ -143,13 +216,16 @@ window.__ModuleLoader__.load({
         const openSchedules = () => { try { hostCtx.layout.selectPanel('schedules') } catch (e) { D.errors.push('openSchedules: ' + String(e)) } }
 
         return h('div', { style: { padding: '20px 30px', maxWidth: 960 } }, [
-          h('div', { key: 'mark', style: { color: '#57b26a', fontSize: 11, fontFamily: 'monospace' } }, 'WB-MARKER: workbench rendered'),
+          h(SunErrorBoundary, { key: 'eb' }, [
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
             h(SunIcon, { key: 'i', size: 22 }),
             h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
             h('button', { key: 'r', onClick: reload, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
-          h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
+          !allReady && h('div', { key: 'init', style: { marginBottom: 16 } }, [
+            init.checking ? h('p', { key: 'w', style: { opacity: 0.6, fontSize: 13 } }, '初始化检查中…') : h(InitPanel, { key: 'ip', checks: init.checks, onRetry: runChecks }),
+          ]),
+          allReady && h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
               h('span', { key: 'l', style: { fontSize: 13 } }, `${label} ${n}`),
@@ -206,6 +282,7 @@ window.__ModuleLoader__.load({
               h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
               h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
             ]),
+          ]),
           ]),
         ])
       }
