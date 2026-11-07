@@ -1,8 +1,7 @@
 /**
- * sun-space client 插件（v8：工作台 v3 多 Tab）。
- * Tab：任务（派活树）| 定时（DSH 原生 schedule 管理，代码零业务定时）| 今日（Journal）。
- * 数据通道：workspaceFiles 既有 remote（vault 直读）+ schedule 网关 API——零新增宿主代码。
- * 卡片点击直达对应子会话（task.session 裸 id，重试式）。
+ * sun-space client 插件（v9：工作台精简版）。
+ * 任务派活树 + 直达子会话；定时任务跳转 DSH 原生"自动化任务"面板（零重复实现）。
+ * 数据通道：workspaceFiles 既有 remote（vault 直读）——零新增宿主代码。
  */
 window.__ModuleLoader__.load({
   id: 'sun-space/client',
@@ -73,11 +72,6 @@ window.__ModuleLoader__.load({
         return tasks
       }
 
-      async function loadSchedules() {
-        const v = await gateway('schedule/list', { request: {} })
-        return (v?.items ?? []).filter(it => (it.title || '').startsWith('Sun'))
-      }
-
       function SunIcon({ size }) {
         const rays = []
         for (let i = 0; i < 8; i++) {
@@ -94,15 +88,13 @@ window.__ModuleLoader__.load({
         ])
       }
 
-      const btnStyle = { fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' }
       const cardStyle = (borderColor) => ({
         display: 'flex', alignItems: 'center', gap: 10,
         border: `1px solid ${borderColor || 'rgba(128,128,128,0.25)'}`,
         borderLeftWidth: 3, borderRadius: 8, padding: '8px 12px', marginBottom: 6,
       })
 
-      // ================= 任务 Tab：派活树 =================
-      function TasksTab() {
+      function Workbench() {
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
@@ -137,14 +129,22 @@ window.__ModuleLoader__.load({
           }
           tryOpen()
         }
+        const openSchedules = () => { try { hostCtx.layout.selectPanel('schedules') } catch (e) { D.errors.push('openSchedules: ' + String(e)) } }
 
-        return h('div', null, [
+        return h('div', { style: { padding: '20px 30px', maxWidth: 960 } }, [
+          h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
+            h(SunIcon, { key: 'i', size: 22 }),
+            h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
+            h('button', { key: 'r', onClick: reload, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
+          ]),
           h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
               h('span', { key: 'l', style: { fontSize: 13 } }, `${label} ${n}`),
             ]))),
           state.error && h('p', { key: 'err', style: { color: '#e8634d', fontSize: 13 } }, '加载失败：' + state.error),
+
+          // ===== 派活树 =====
           h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => { try { hostCtx.uiWorkspace.openSession(ROUTER_SESSION) } catch (e) { D.errors.push(String(e)) } }, style: {
             display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer',
             border: anyRunning ? '1px solid rgba(87,178,106,0.55)' : '1px solid rgba(128,128,128,0.3)',
@@ -176,133 +176,28 @@ window.__ModuleLoader__.load({
               t.journal ? h('span', { key: 'j', style: { fontSize: 11, opacity: 0.45, fontFamily: 'monospace' } }, t.journal) : null,
             ]),
           ])),
-          tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13 } }, '暂无任务——晨报生成后这里会长出派活树'),
-        ])
-      }
+          tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
 
-      // ================= 定时 Tab：DSH 原生 schedule 管理 =================
-      const SCHEDULE_TEMPLATES = {
-        '晨报': { title: 'Sun 晨间简报', expression: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记 → sun_notify(ask) 推送摘要请我确认。sys-onboarding-guide 类待办按 runbook §6 过滤。等待确认期间只做无副作用准备。' },
-        '日报': { title: 'Sun 日报', expression: '30 18 * * 1-5', prompt: '【定时 · 日报】按 runbook §7 执行日报：sun_read(tasks/journal/note full) 汇总当日任务 → 日报追加到 40-Journal/当日.md（今日完成/未完成与原因/明日建议，保持 status=draft）→ sun_notify(ask) 请求审核。' },
-        '周复盘': { title: 'Sun 周复盘', expression: '0 17 * * 5', prompt: '【定时 · 周复盘】汇总本周 Journal 与任务笔记：产出周报（完成了什么/模式观察/runbook 修订建议 diff）→ sun_notify(ask) 请求人审。' },
-      }
-
-      function ScheduleTab() {
-        const [state, setState] = React.useState({ loading: true, items: [], error: null, busy: false })
-        const reload = React.useCallback(() => {
-          setState(s => ({ ...s, loading: true, error: null }))
-          loadSchedules()
-            .then(items => setState({ loading: false, items, error: null }))
-            .catch(e => setState({ loading: false, items: [], error: String(e.message || e) }))
-        }, [])
-        React.useEffect(() => { reload() }, [reload])
-
-        const createTemplate = async (key) => {
-          setState(s => ({ ...s, busy: true }))
-          try {
-            const tpl = SCHEDULE_TEMPLATES[key]
-            await gateway('schedule/create', { request: {
-              title: tpl.title,
-              prompt: tpl.prompt,
-              timing: { kind: 'cron', cron: { expression: tpl.expression, time_zone: 'Asia/Shanghai' } },
-              target: { kind: 'session', sessionId: ROUTER_SESSION },
-            } })
-            reload()
-          } catch (e) { setState(s => ({ ...s, busy: false, error: String(e.message || e).slice(0, 160) })) }
-        }
-        const del = async (id) => {
-          setState(s => ({ ...s, busy: true }))
-          try {
-            await gateway('schedule/edit', { request: { id, action: 'delete' } })
-            reload()
-          } catch (e) { setState(s => ({ ...s, busy: false, error: String(e.message || e).slice(0, 160) })) }
-        }
-        const runNow = async (id) => {
-          setState(s => ({ ...s, busy: true }))
-          try { await gateway('schedule/run', { request: { id } }); reload() } catch (e) { setState(s => ({ ...s, busy: false, error: String(e.message || e).slice(0, 160) })) }
-        }
-
-        const existing = new Set(state.items.map(i => i.title))
-        return h('div', null, [
-          h('p', { key: 'note', style: { margin: '0 0 12px', opacity: 0.65, fontSize: 12 } },
-            '定时任务 = DSH 原生 schedule（自动化任务面板同步可见）· 目标会话：Sun Router · Asia/Shanghai'),
-          state.error && h('p', { key: 'err', style: { color: '#e8634d', fontSize: 13 } }, state.error),
-          state.loading && h('p', { key: 'ld', style: { opacity: 0.6 } }, '加载中…'),
-          ...state.items.map(it => h('div', { key: it.id, style: { ...cardStyle(), justifyContent: 'space-between', marginBottom: 8 } }, [
-            h('div', { key: 'l' }, [
-              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13 } }, it.title),
-              h('div', { key: 'n', style: { fontSize: 11, opacity: 0.6 } }, `状态 ${it.status}${it.nextAt ? ' · 下次 ' + String(it.nextAt).slice(0, 16) : ''}`),
+          // ===== 入口卡片 =====
+          h('div', { key: 'entries', style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12, marginTop: 18 } }, [
+            h('div', { key: 'sched', onClick: openSchedules, title: '打开自动化任务面板', style: {
+              border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer',
+            } }, [
+              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '⏰ 定时任务'),
+              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, '晨报 08:45 · 日报 18:30（工作日）——管理、启停与新增在自动化任务面板'),
             ]),
-            h('div', { key: 'ops', style: { display: 'flex', gap: 6 } }, [
-              h('button', { key: 'run', onClick: () => runNow(it.id), disabled: state.busy, style: btnStyle }, '立即运行'),
-              h('button', { key: 'del', onClick: () => del(it.id), disabled: state.busy, style: btnStyle }, '删除'),
+            h('div', { key: 'journal', title: 'Journal 在 Obsidian 中查看与编辑', style: {
+              border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px',
+            } }, [
+              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
+              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
             ]),
-          ])),
-          h('div', { key: 'tpl', style: { marginTop: 16 } }, [
-            h('div', { key: 'tt', style: { fontSize: 12, opacity: 0.6, marginBottom: 8 } }, '一键创建（模板已含 prompt 与目标会话）'),
-            h('div', { key: 'btns', style: { display: 'flex', gap: 8 } },
-              Object.keys(SCHEDULE_TEMPLATES).map(key => h('button', {
-                key, onClick: () => createTemplate(key), disabled: state.busy || existing.has(SCHEDULE_TEMPLATES[key].title),
-                style: { ...btnStyle, opacity: existing.has(SCHEDULE_TEMPLATES[key].title) ? 0.4 : 1 },
-              }, existing.has(SCHEDULE_TEMPLATES[key].title) ? SCHEDULE_TEMPLATES[key].title + ' ✓' : '+ ' + SCHEDULE_TEMPLATES[key].title))),
           ]),
-        ])
-      }
-
-      // ================= 今日 Tab：Journal =================
-      function TodayTab() {
-        const [state, setState] = React.useState({ loading: true, text: '', error: null })
-        React.useEffect(() => {
-          const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
-          readVaultFile(`${VAULT}/40-Journal/${today}.md`, 400)
-            .then(text => setState({ loading: false, text, error: null }))
-            .catch(e => setState({ loading: false, text: '', error: '今日尚无 Journal' }))
-        }, [])
-        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
-        let fm = {}, sections = []
-        if (state.text) {
-          const fmMatch = /^---\r?\n([\s\S]*?)\r?\n---/.exec(state.text)
-          if (fmMatch) for (const line of fmMatch[1].split('\n')) { const kv = /^(\w+):\s*(.*)$/.exec(line); if (kv) fm[kv[1]] = kv[2] }
-          sections = [...state.text.matchAll(/^## (.+)$/gm)].map(m => m[1])
-        }
-        return h('div', null, [
-          h('div', { key: 'chips', style: { display: 'flex', gap: 8, marginBottom: 14 } }, [
-            h('span', { key: 'm', style: { ...btnStyle, cursor: 'default' } }, `晨报 ${fm.morning || '-'}`),
-            h('span', { key: 's', style: { ...btnStyle, cursor: 'default' } }, `日报 ${fm.status || '-'}`),
-            h('span', { key: 'u', style: { ...btnStyle, cursor: 'default' } }, `更新 ${String(fm.updated || '').slice(5, 16)}`),
-          ]),
-          h('div', { key: 'sec', style: { fontSize: 12, opacity: 0.7, marginBottom: 12 } }, '章节：' + (sections.join(' · ') || '（空）')),
-          state.error && h('p', { style: { opacity: 0.5, fontSize: 13 } }, state.error),
-          state.text && h('pre', { style: { whiteSpace: 'pre-wrap', fontSize: 12, lineHeight: 1.7, opacity: 0.85, maxHeight: 480, overflow: 'auto', border: '1px solid rgba(128,128,128,0.2)', borderRadius: 8, padding: 12 } }, state.text.slice(0, 4000)),
-        ])
-      }
-
-      // ================= 主组件：Tab 容器 =================
-      function Workbench() {
-        const [tab, setTab] = React.useState('tasks')
-        const TABS = [['tasks', '任务'], ['schedule', '定时'], ['today', '今日']]
-        return h('div', { style: { padding: '20px 30px', maxWidth: 960 } }, [
-          h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
-            h(SunIcon, { key: 'i', size: 22 }),
-            h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
-            h('span', { key: 'v', style: { fontSize: 11, opacity: 0.45 } }, 'v3'),
-          ]),
-          h('div', { key: 'tabs', style: { display: 'flex', gap: 4, borderBottom: '1px solid rgba(128,128,128,0.25)', marginBottom: 16 } },
-            TABS.map(([key, label]) => h('button', {
-              key, onClick: () => setTab(key),
-              style: {
-                padding: '7px 16px', fontSize: 13, cursor: 'pointer', background: 'transparent', color: 'inherit',
-                border: 'none', borderBottom: tab === key ? '2px solid currentColor' : '2px solid transparent', fontWeight: tab === key ? 600 : 400,
-              },
-            }, label))),
-          tab === 'tasks' && h(TasksTab, { key: 'tasks' }),
-          tab === 'schedule' && h(ScheduleTab, { key: 'sched' }),
-          tab === 'today' && h(TodayTab, { key: 'today' }),
         ])
       }
 
       return {
-        inject: ['slots', 'uiWorkspace'],
+        inject: ['slots', 'uiWorkspace', 'layout'],
         apply(ctx) {
           D.phase = 'apply-entered'
           hostCtx = ctx
