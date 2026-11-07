@@ -65,3 +65,21 @@ export function inlineSummary(text: string, maxChars = 600): string {
   const summary = firstPara.trim()
   return summary.length <= maxChars ? summary : `${summary.slice(0, maxChars)}…`
 }
+
+/** 把 frontmatter 与正文分离；无 frontmatter 时 body 为原文。 */
+export function splitFrontmatter(text: string): { meta: Record<string, string | string[]>; body: string; hadMeta: boolean } {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text)
+  if (!m) return { meta: {}, body: text, hadMeta: false }
+  return { meta: parseFrontmatter(text), body: text.slice(m[0].length), hadMeta: true }
+}
+
+/** 局部更新 frontmatter 字段（正文不动）——消除"整写覆盖未见正文"的风险（日报实测暴露的缺口）。 */
+export function updateFrontmatter(
+  text: string,
+  patch: Record<string, string>,
+): string {
+  const { meta, body, hadMeta } = splitFrontmatter(text)
+  const merged = { ...meta, ...patch, updated: new Date().toISOString().slice(0, 16) + '+08:00' }
+  const fm = serializeFrontmatter(merged)
+  return hadMeta ? `${fm}${body}` : `${fm}\n${body}`
+}

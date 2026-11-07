@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { inlineSummary, parseFrontmatter, resolveSafe, VaultPathError } from './vault'
+import { inlineSummary, parseFrontmatter, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
 import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools']
@@ -61,11 +61,12 @@ export function apply(ctx: Context) {
       properties: {
         what: { type: 'string', enum: ['journal', 'tasks', 'triggers', 'runbook', 'memory', 'note'] },
         date: { type: 'string', description: 'journal 用：YYYY-MM-DD，默认今天' },
-        path: { type: 'string', description: 'note 用：vault 相对路径' },
+        path: { type: 'string', description: 'note/journal 用：vault 相对路径' },
+        full: { type: 'boolean', description: 'note/journal 用：true 返回全文（≤8000 字）而非 Inline 摘要' },
       },
       required: ['what'],
     },
-    async (args: { what: string; date?: string; path?: string }) => {
+    async (args: { what: string; date?: string; path?: string; full?: boolean }) => {
       try {
         if (args.what === 'triggers') {
           const dir = resolveSafe(VAULT, '90-Meta/triggers')
@@ -86,6 +87,7 @@ export function apply(ctx: Context) {
           const d = args.date ?? new Date().toISOString().slice(0, 10)
           const p = resolveSafe(VAULT, `40-Journal/${d}.md`)
           const raw = await readFile(p, 'utf8')
+          if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
         }
         if (args.what === 'tasks') {
@@ -106,6 +108,7 @@ export function apply(ctx: Context) {
         if (args.what === 'note') {
           if (!args.path) return { ok: false, note: 'note 需要 path' }
           const raw = await readFile(resolveSafe(VAULT, args.path), 'utf8')
+          if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
         }
         return { ok: false, note: `unknown what: ${args.what}` }
@@ -176,5 +179,34 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_notify (+sun_route via tool-subagent)')
+  ctx.tools.register(def(
+    'sun_vault_meta',
+    '局部更新笔记 frontmatter 字段（正文完全不动）。用于状态流转（proposed→running→done）、confirmations 计数等，避免整写覆盖。',
+    {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'vault 相对路径' },
+        fields: {
+          type: 'object',
+          description: '要更新的字段键值对（值一律字符串；数组字段用逗号分隔）',
+          additionalProperties: { type: 'string' },
+        },
+      },
+      required: ['path', 'fields'],
+    },
+    async (args: { path: string; fields: Record<string, string> }) => {
+      try {
+        const p = resolveSafe(VAULT, args.path)
+        const raw = await readFile(p, 'utf8')
+        const updated = updateFrontmatter(raw, args.fields)
+        await writeFile(p, updated, 'utf8')
+        return { ok: true, data: { path: args.path, fields: Object.keys(args.fields) } }
+      } catch (e) {
+        if (e instanceof VaultPathError) return { ok: false, note: `路径被拒绝: ${e.message}` }
+        return { ok: false, note: String((e as Error).message).slice(0, 200) }
+      }
+    },
+  ))
+
+  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify (+sun_route via tool-subagent)')
 }

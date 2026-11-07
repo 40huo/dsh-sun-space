@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { inlineSummary, parseFrontmatter, resolveSafe, serializeFrontmatter, VaultPathError } from '../src/vault'
+import { inlineSummary, parseFrontmatter, resolveSafe, serializeFrontmatter, updateFrontmatter, VaultPathError } from '../src/vault'
 import { diff, type DwsSnapshot } from '../src/dws'
+
+describe('updateFrontmatter', () => {
+  it('patches fields and keeps body untouched', () => {
+    const src = '---\ntype: task\nstatus: proposed\nconfirmations: 0\n---\n\n## 结论\nABC\n'
+    const out = updateFrontmatter(src, { status: 'running', confirmations: '1' })
+    expect(out).toContain('status: running')
+    expect(out).toContain('confirmations: 1')
+    expect(out).toContain('## 结论\nABC\n')
+    expect(out).not.toContain('status: proposed')
+  })
+  it('stamps updated automatically', () => {
+    const out = updateFrontmatter('---\ntype: daily\n---\nbody', { morning: 'confirmed' })
+    expect(out).toContain('morning: confirmed')
+    expect(out).toContain('updated: 2026-')
+  })
+  it('adds frontmatter to files without one', () => {
+    const out = updateFrontmatter('plain body', { type: 'capture' })
+    expect(out.startsWith('---\n')).toBe(true)
+    expect(out).toContain('type: capture')
+    expect(out).toContain('plain body')
+  })
+})
 
 describe('vault resolveSafe', () => {
   const root = '/tmp/vault-test'
