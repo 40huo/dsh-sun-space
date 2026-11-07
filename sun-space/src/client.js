@@ -93,15 +93,23 @@ window.__ModuleLoader__.load({
       }
 
       function Workbench() {
-        const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
+        const [state, setState] = React.useState({ loading: true, tasks: [], sessions: [], error: null })
         const reload = React.useCallback(() => {
           setState(s => ({ ...s, loading: true, error: null }))
-          loadTasks()
-            .then(tasks => setState({ loading: false, tasks, error: null }))
-            .catch(e => setState({ loading: false, tasks: [], error: String(e.message || e) }))
+          Promise.all([
+            loadTasks(),
+            fetch('/api/session/list', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ type: 'client-request', rpcId: 'sun-sl', method: 'session/list', payload: { args: { _request: {} } } }),
+            }).then(r => r.json()).then(j => j?.result?.value ?? null).catch(() => null),
+          ])
+            .then(([tasks, sessions]) => setState({ loading: false, tasks, sessions, error: null }))
+            .catch(e => setState({ loading: false, tasks: [], sessions: [], error: String(e.message || e) }))
         }, [])
         React.useEffect(() => { reload() }, [reload])
 
+        const order = { 'need-confirm': 0, running: 1, proposed: 2, blocked: 3, done: 4, dropped: 5 }
+        const tasks = [...state.tasks].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
         const by = s => state.tasks.filter(t => t.status === s)
         const counters = [
           ['未派发', by('proposed').length, STATUS_META.proposed.color],
@@ -109,49 +117,72 @@ window.__ModuleLoader__.load({
           ['等你确认', by('need-confirm').length, STATUS_META['need-confirm'].color],
           ['已完成', by('done').length, STATUS_META.done.color],
         ]
+        // 派活树运行态：router 会话（含其 Worker）是否在跑
+        const routerRunning = (state.sessions?.sessions || state.sessions?.items || [])
+          .some(s => (s.title || '').includes('Sun') && (s.status === 'running' || s.running === true))
+        const anyRunning = by('running').length > 0 || routerRunning
 
-        const groups = [
-          ['need-confirm', '待你确认（琥珀：personal agent 语义，最显眼）'],
-          ['running', '进行中'],
-          ['proposed', '未派发'],
-          ['done', '已完成（最近）'],
-        ].map(([st, title]) => ({ st, title, items: by(st).slice(0, st === 'done' ? 6 : 12) }))
-          .filter(g => g.items.length > 0)
-
-        return h('div', { style: { padding: '24px 32px', maxWidth: 920 } }, [
+        return h('div', { style: { padding: '24px 32px', maxWidth: 980 } }, [
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 } }, [
             h(SunIcon, { key: 'i', size: 22 }),
             h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
             h('button', { key: 'r', onClick: reload, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
           h('p', { key: 'sub', style: { margin: '0 0 14px', opacity: 0.65, fontSize: 12 } },
-            '数据源：vault 50-Tasks（workspaceFiles 既有通道 · 只读视图）'),
+            '派活树 · 数据源 vault 50-Tasks（workspaceFiles 既有通道 · 只读视图）'),
           state.error && h('p', { key: 'err', style: { color: '#e8634d', fontSize: 13 } }, '加载失败：' + state.error),
-          h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 18 } },
+          h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 20 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
               h('span', { key: 'l', style: { fontSize: 13 } }, `${label} ${n}`),
             ]))),
-          ...groups.map(g => h('div', { key: g.st, style: { marginBottom: 18 } }, [
-            h('div', { key: 'gt', style: { fontSize: 12, opacity: 0.6, margin: '6px 0 8px', letterSpacing: 1 } }, g.title),
-            ...g.items.map(t => h('div', {
-              key: t.id,
-              style: {
+
+          // ===== 派活树：Router 卡 → 肘形连接线 → 任务卡 =====
+          h('div', { key: 'tree', style: { position: 'relative', paddingLeft: 26 } }, [
+            // Router 根卡
+            h('div', { key: 'root', style: {
+              display: 'inline-flex', alignItems: 'center', gap: 10,
+              border: anyRunning ? '1px solid rgba(87,178,106,0.55)' : '1px solid rgba(128,128,128,0.3)',
+              background: anyRunning ? 'rgba(87,178,106,0.10)' : 'transparent',
+              borderRadius: 10, padding: '8px 14px',
+            } }, [
+              h(SunIcon, { key: 'av', size: 24 }),
+              h('div', { key: 'n', style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [
+                h('span', { key: 'a', style: { fontWeight: 600, fontSize: 14 } }, 'Sun Router'),
+                h('span', { key: 'b', style: { fontSize: 11, opacity: 0.65 } }, '只分派 · sun-router 预设'),
+              ]),
+              h('span', { key: 'st', style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 } }, [
+                h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: anyRunning ? '#57b26a' : '#9e9e9e', display: 'inline-block' } }),
+                anyRunning ? '干活中' : '待命',
+              ]),
+            ]),
+            // 主干
+            tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
+            // 任务卡（肘形连接线：左竖线 + 底部短横）
+            ...tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
+              h('div', { key: 'elbow', style: {
+                position: 'absolute', left: 13, top: -8, width: 8, height: 22,
+                borderLeft: '2px solid rgba(128,128,128,0.35)', borderBottom: '2px solid rgba(128,128,128,0.35)', borderTop: '2px solid rgba(128,128,128,0.35)',
+                borderTopLeftRadius: 6,
+              } }),
+              h('div', { key: 'card', style: {
                 display: 'flex', alignItems: 'center', gap: 10,
-                border: `1px solid ${g.st === 'need-confirm' ? STATUS_META['need-confirm'].color : 'rgba(128,128,128,0.25)'}`,
+                border: `1px solid ${t.status === 'need-confirm' ? STATUS_META['need-confirm'].color : 'rgba(128,128,128,0.25)'}`,
                 borderLeftWidth: 3, borderLeftColor: STATUS_META[t.status]?.color || '#999',
-                borderRadius: 8, padding: '8px 12px', marginBottom: 6,
-              },
-            }, [
-              h('span', { key: 'id', style: { fontFamily: 'monospace', fontSize: 12 } }, t.id),
-              h('span', { key: 's', style: { fontSize: 12, color: STATUS_META[t.status]?.color } }, STATUS_META[t.status]?.label || t.status),
-              h('span', { key: 'src', style: { fontSize: 11, opacity: 0.55 } }, t.source),
-              t.confirmations && t.confirmations !== '0' ? h('span', { key: 'cf', style: { fontSize: 11, opacity: 0.55 } }, `确认×${t.confirmations}`) : null,
+                borderRadius: 8, padding: '8px 12px', background: t.status === 'running' ? 'rgba(77,157,232,0.08)' : 'transparent',
+              } }, [
+                h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: STATUS_META[t.status]?.color || '#999', display: 'inline-block' } }),
+                h('span', { key: 'id', style: { fontFamily: 'monospace', fontSize: 12 } }, t.id),
+                h('span', { key: 's', style: { fontSize: 12, color: STATUS_META[t.status]?.color } }, STATUS_META[t.status]?.label || t.status),
+                h('span', { key: 'src', style: { fontSize: 11, opacity: 0.55 } }, t.source),
+                t.confirmations && t.confirmations !== '0' ? h('span', { key: 'cf', style: { fontSize: 11, opacity: 0.55 } }, `确认×${t.confirmations}`) : null,
+                t.journal ? h('span', { key: 'j', style: { fontSize: 11, opacity: 0.45, fontFamily: 'monospace' } }, t.journal) : null,
+              ]),
             ])),
-          ])),
-          state.tasks.length === 0 && !state.loading && !state.error
-            ? h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13 } }, '暂无任务笔记——等晨报生成后这里会出现派活树') : null,
-          h('div', { key: 'legend', style: { marginTop: 10, fontSize: 11, opacity: 0.55, display: 'flex', gap: 14 } },
+            tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingTop: 6 } }, '暂无任务——晨报生成后这里会长出派活树'),
+          ]),
+
+          h('div', { key: 'legend', style: { marginTop: 12, fontSize: 11, opacity: 0.55, display: 'flex', gap: 14 } },
             Object.entries(STATUS_META).slice(0, 4).map(([k, m]) => h('span', { key: k }, '● ' + m.label))),
         ])
       }
