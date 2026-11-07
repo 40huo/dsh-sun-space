@@ -170,7 +170,12 @@ window.__ModuleLoader__.load({
                 borderTopLeftRadius: 6,
               } }),
               h('div', { key: 'card', title: '点击打开对应会话', onClick: () => {
-                try { hostCtx.uiWorkspace.openSession(t.session || SCOPE_SESSION) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+                try {
+            const sid = t.session || SCOPE_SESSION
+            // 子会话必须用 SubagentAddress 形态（裸 id 会被 workspace retain 静默忽略）
+            const addr = hostCtx.sessions.subagentAddress?.(sid) || sid
+            hostCtx.uiWorkspace.openSession(addr)
+          } catch (e) { D.errors.push('openSession: ' + String(e)) }
               }, style: {
                 cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -195,7 +200,7 @@ window.__ModuleLoader__.load({
       }
 
       return {
-        inject: ['slots', 'uiWorkspace'],
+        inject: ['slots', 'uiWorkspace', 'sessions'],
         apply(ctx) {
           D.phase = 'apply-entered'
           hostCtx = ctx
@@ -209,6 +214,7 @@ window.__ModuleLoader__.load({
               return ctx.slots.register({ name: 'main', key: PANEL_ID }, Workbench)
             })
             window.__sunOpenSession = (id) => { try { hostCtx.uiWorkspace.openSession(id); return 'called' } catch (e) { return 'ERR: ' + String(e) } }
+window.__sunAddr = (id) => { try { return JSON.stringify(hostCtx.sessions.subagentAddress ? (hostCtx.sessions.subagentAddress(id) ?? null) : 'no-fn') } catch (e) { return 'ERR: ' + String(e) } }
             D.phase = 'apply-done'
           } catch (e) {
             D.errors.push('apply: ' + String(e && e.stack || e))
