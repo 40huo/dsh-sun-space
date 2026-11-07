@@ -71,6 +71,7 @@ window.__ModuleLoader__.load({
             if (fm.id) tasks.push({
               id: fm.id, status: fm.status || 'proposed', source: fm.source || '',
               priority: fm.priority || 'medium', journal: fm.journal || '', file: id + '.md',
+              session: fm.session || '',
             })
           } catch (err) { /* 单文件失败不拖垮看板 */ }
         }
@@ -171,10 +172,15 @@ window.__ModuleLoader__.load({
               } }),
               h('div', { key: 'card', title: '点击打开对应会话', onClick: () => {
                 try {
-            const sid = t.session || SCOPE_SESSION
-            // 子会话必须用 SubagentAddress 形态（裸 id 会被 workspace retain 静默忽略）
-            const addr = hostCtx.sessions.subagentAddress?.(sid) || sid
-            hostCtx.uiWorkspace.openSession(addr)
+            // 实测：子会话跳转需先有父会话上下文（从工作台直开子会话会被静默回退到父）
+            const target = t.session || SCOPE_SESSION
+            hostCtx.uiWorkspace.openSession(SCOPE_SESSION)
+            window.__sunJumpLog = window.__sunJumpLog || []
+            window.__sunJumpLog.push({ at: Date.now(), target })
+            setTimeout(() => {
+              window.__sunJumpLog.push({ at: Date.now(), fired: true, target })
+              try { hostCtx.uiWorkspace.openSession(target) } catch (e) { window.__sunJumpLog.push({ err: String(e) }) }
+            }, 1600)
           } catch (e) { D.errors.push('openSession: ' + String(e)) }
               }, style: {
                 cursor: 'pointer',
@@ -200,7 +206,7 @@ window.__ModuleLoader__.load({
       }
 
       return {
-        inject: ['slots', 'uiWorkspace', 'sessions'],
+        inject: ['slots', 'uiWorkspace'],
         apply(ctx) {
           D.phase = 'apply-entered'
           hostCtx = ctx
