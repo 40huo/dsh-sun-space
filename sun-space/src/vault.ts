@@ -7,18 +7,30 @@ import { join, resolve, sep } from 'node:path'
 
 export const WRITABLE_ROOTS = ['00-Inbox', '40-Journal', '50-Tasks', '90-Meta']
 
+/** 可读目录 ⊇ 可写目录：链式召回需要读知识区（架构 §8.5 可放行级——读一切我可见的数据）。 */
+export const READABLE_ROOTS = ['00-Inbox', '10-Projects', '20-Areas', '30-Knowledge', '40-Journal', '50-Tasks', '60-Archive', '90-Meta']
+
 export class VaultPathError extends Error {}
 
-/** 校验并解析 vault 内相对路径；越界/不可写目录即抛错。 */
-export function resolveSafe(vaultRoot: string, rel: string): string {
+function resolveWithin(vaultRoot: string, rel: string, roots: string[], kind: string): string {
   if (typeof rel !== 'string' || rel.length === 0) throw new VaultPathError('empty path')
   if (rel.includes('\0')) throw new VaultPathError('nul byte')
   const abs = resolve(vaultRoot, rel)
   const root = resolve(vaultRoot) + sep
   if (!abs.startsWith(root)) throw new VaultPathError(`escapes vault root: ${rel}`)
   const first = rel.split('/')[0]
-  if (!WRITABLE_ROOTS.includes(first)) throw new VaultPathError(`not a writable root: ${first}`)
+  if (!roots.includes(first)) throw new VaultPathError(`not a ${kind} root: ${first}`)
   return abs
+}
+
+/** 校验并解析 vault 内相对路径；越界/不可写目录即抛错。 */
+export function resolveSafe(vaultRoot: string, rel: string): string {
+  return resolveWithin(vaultRoot, rel, WRITABLE_ROOTS, 'writable')
+}
+
+/** 只读访问（sun_read 链式召回用）：放行全部知识区，写纪律不受影响。 */
+export function resolveRead(vaultRoot: string, rel: string): string {
+  return resolveWithin(vaultRoot, rel, READABLE_ROOTS, 'readable')
 }
 
 /** 解析 YAML frontmatter（扁平 key: value 与一行式数组）；无 frontmatter 返回 {}。 */

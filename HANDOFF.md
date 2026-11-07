@@ -23,7 +23,7 @@
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
 | 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
-| 单元测试 | ✅ 37 用例（含 Watchdog 探活/TTL 清理） | `pnpm test` |
+| 单元测试 | ✅ 40 用例（Watchdog 探活/TTL/resolveRead 分级白名单） | `pnpm test` |
 | composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
@@ -49,10 +49,12 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 |---|---|
 | 双预设 | sun-router（只分派）/ sun-worker（只执行）——工具白名单由组合保证；Worker 预设是内部组件（模式选择器中标注"无需手选"） |
 | sun_route | 宿主薄包装：startActivation 直调（spec.request 包装！）、task_id 命名子会话、childId 回写任务笔记 |
+| **会话 id 非常量** | **禁止硬编码 Router 会话 id**（v0.4.1 不变量）。唯一事实源：vault `90-Meta/system/state.json`；工作台解析链 = session/list(sun-router) → state.json 裁决 → updatedAt 最新；写回 = 创建按钮 session/prompt 自登记 + 晨报自检修正；verify --smoke ⑤ 断言 schedule target 对齐 |
 | 子会话跳转 | 工作台卡片 → openSession(task.session 裸 uuid)；**测试必须用 cua/Playwright 真实点击**（el.click() 缺指针序列会静默无效） |
-| 定时 | 业务定时全部在 DSH 原生 schedule（代码零 cron）；Source 只做 dws 轮询 diff（30min） |
-| 初始化检查 | 工作台三行检查（vault/依赖插件/Router 会话）+ 引导按钮；注意 agentPresets/list 参数为**空 args**（不能包 request） |
-| 时区 | updateFrontmatter 用本地时间拼接（toISOString 会差 8 小时，T-05 教训） |
+| 定时 | 业务定时全部在 DSH 原生 schedule（晨报/日报/Watchdog/周复盘，代码零 cron）；Source 只做 dws 轮询 diff（30min） |
+| 初始化检查 | 三行检查（①vault ②依赖插件 ③Router 会话）**三项全绿才进看板**（只缺 ③ 也要出面板）；① 需要 ③ 的会话作 workspaceFiles scope；agentPresets/list 参数为**空 args** |
+| cwd 语义 | session/list 的 cwd 是**工作区分桶路径**（boot cwd），不是 vault——"Router 会话落在知识库目录"是误解，别拿 cwd 过滤会话 |
+| 时区 | 一律 `vault.ts` 的 `localDate()`/`localStamp()`（无时区后缀本地时间）；toISOString 是 UTC（差 8h/取错天）双坑 |
 
 ## 五、已知问题 / 待办（2026-11-08 重排，执行计划见 WORKPLAN.md §8）
 
@@ -70,7 +72,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 
 ## 六、踩坑记录（勿重蹈）
 
-1. **浏览器 immutable 缓存**：combo rev 非内容哈希——client.js 改后若 rev 未变，浏览器吃旧缓存体。用错误边界+标记元素判别新旧代码。
+1. **浏览器 immutable 缓存**：combo rev 非内容哈希——client.js 改后若 rev 未变，浏览器吃旧缓存体。判别手段：工作台根节点 `data-wb-rev="vN"` 版本标记（不可见，Playwright/DevTools 可查，改 client.js 时同步 bump）+ 错误边界兜底。
 2. **el.click() 缺指针序列**：对 DSH 组件静默无效——UI 测试必须走 Playwright/cua 真实点击。
 3. **网关参数形状**：各 remote 方法 args 形状不一（agentPresets/list 空对象、schedule/* 带 request、session/list 带 _request）——以实际探测为准，勿照搬。
 4. **npx 构建产物与 repo 源码有漂移**：以运行时 lib 为契约源（startActivation 的 spec.request 包装差异）。

@@ -74,6 +74,11 @@ function schedulePolling(ctx: Context) {
     try {
       const snap = await snapshot()
       const prev = await readPrev()
+      if (!prev) {
+        // 首跑建基线：全量快照静默落盘、不入触发队列——否则装满历史当"新增"会洪泛通知（复审 R1 遗留项）
+        await writeFile(SNAPSHOT_FILE, JSON.stringify(snap), 'utf8')
+        return
+      }
       const fresh = diff(prev, snap)
       if (fresh.newTodos.length || fresh.newApprovals.length) {
         await writeTrigger('snapshot-diff', fresh)

@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { inlineSummary, localDate, parseFrontmatter, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
+import { inlineSummary, localDate, parseFrontmatter, resolveRead, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
 import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
@@ -55,7 +55,7 @@ const DING_LEVELS = new Set((process.env.SUN_DING_LEVELS ?? 'ask,urgent').split(
 export function apply(ctx: Context) {
   ctx.tools.register(def(
     'sun_read',
-    '读取工作空间状态：journal（当日日记）| tasks（任务列表与状态）| triggers（Source 触发队列，最新在前）| runbook（行为规则）| memory（关于用户）| note（任意 vault 文件的 Inline 摘要）。',
+    '读取工作空间状态：journal（当日日记）| tasks（任务列表与状态）| triggers（Source 触发队列，最新在前）| runbook（行为规则）| memory（关于用户）| note（vault 各区文件 Inline 摘要——含知识区 10/20/30 只读，链式召回用）。',
     {
       type: 'object',
       properties: {
@@ -85,7 +85,7 @@ export function apply(ctx: Context) {
         }
         if (args.what === 'journal') {
           const d = args.date ?? localDate()
-          const p = resolveSafe(VAULT, `40-Journal/${d}.md`)
+          const p = resolveRead(VAULT, `40-Journal/${d}.md`)
           const raw = await readFile(p, 'utf8')
           if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
@@ -107,7 +107,7 @@ export function apply(ctx: Context) {
         }
         if (args.what === 'note') {
           if (!args.path) return { ok: false, note: 'note 需要 path' }
-          const raw = await readFile(resolveSafe(VAULT, args.path), 'utf8')
+          const raw = await readFile(resolveRead(VAULT, args.path), 'utf8')
           if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
         }
@@ -162,8 +162,19 @@ export function apply(ctx: Context) {
       if (args.level === 'info' && infoBudget.sent >= 5) {
         return { ok: false, note: 'info 打扰预算已用尽（5/日）——改为写入 Journal 通知流水' }
       }
-      const uid = await currentUserId()
-      const res = await notifySelf(uid, `[Sun·${args.level}] ${args.text}`)
+      let uid: string
+      try {
+        uid = await currentUserId()
+      } catch (e) {
+        return { ok: false, note: `凭证探活失败: ${String((e as Error).message).slice(0, 120)}` }
+      }
+      let res: unknown
+      try {
+        res = await notifySelf(uid, `[Sun·${args.level}] ${args.text}`)
+      } catch (e) {
+        // dws 未登录/网络失败不裸抛——返回结构化失败，Router 可降级写 Journal（复审遗留项）
+        return { ok: false, note: `通知发送失败: ${String((e as Error).message).slice(0, 150)}` }
+      }
       if (args.level === 'info') infoBudget.sent++
       // ask/urgent 补 DING 强推（自发自收消息无客户端推送）
       let ding: { ok: boolean } | undefined

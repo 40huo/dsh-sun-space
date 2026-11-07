@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inlineSummary, localDate, localStamp, parseFrontmatter, resolveSafe, serializeFrontmatter, updateFrontmatter, VaultPathError } from '../src/vault'
+import { inlineSummary, localDate, localStamp, parseFrontmatter, resolveRead, resolveSafe, serializeFrontmatter, updateFrontmatter, VaultPathError } from '../src/vault'
 import { diff, type DwsSnapshot } from '../src/dws'
 
 describe('updateFrontmatter', () => {
@@ -50,6 +50,22 @@ describe('vault resolveSafe', () => {
   it('rejects traversal', () => {
     expect(() => resolveSafe(root, '50-Tasks/../../etc/passwd')).toThrow(VaultPathError)
     expect(() => resolveSafe(root, '../outside.md')).toThrow(VaultPathError)
+  })
+})
+
+describe('vault resolveRead（链式召回只读白名单）', () => {
+  const root = '/tmp/vault-test'
+  it('放行知识区（架构 §8.5 可放行级：读一切我可见的数据）', () => {
+    for (const p of ['30-Knowledge/dws.md', '20-Areas/work-dingtalk/index.md', '10-Projects/sun/p.md', '60-Archive/T-old.md']) {
+      expect(resolveRead(root, p)).toContain(p.split('/')[0])
+    }
+  })
+  it('仍拒绝越界与白名单外根', () => {
+    expect(() => resolveRead(root, '../outside.md')).toThrow(VaultPathError)
+    expect(() => resolveRead(root, '99-Tmp/x.md')).toThrow(VaultPathError)
+  })
+  it('写白名单不受影响：resolveSafe 仍拒知识区', () => {
+    expect(() => resolveSafe(root, '30-Knowledge/x.md')).toThrow(VaultPathError)
   })
 })
 

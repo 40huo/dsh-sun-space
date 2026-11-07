@@ -194,8 +194,10 @@ gantt
 | 项 | 状态 |
 |---|---|
 | IM 三合一（dev connect 入站 + 真推送 + 卡片回调） | 等机器人应用建成，建成即做（约半天） |
-| 生产 schedule prompt 同步 ask 卡版 | 首跑前 5 分钟 quick win |
+| 生产 schedule prompt 同步 ask 卡版 | ✅ 已核实完成（11-07 上会话已更新） |
 | 会话轮换触发线（catalog >50） | 观察，W46 周复盘检视 |
 | TS 层 vault 机械巡检（逾期/Inbox 进轮询） | 先由 W-1 巡检清单覆盖，有真实痛点再做 |
 | Make 式指令 / 语音甩待办 / Channel 分主题 | W45 已记录，P3 后期 |
 | 生活领域分域（finance/health/learning） | backlog，巡检稳定运行一周后评估 |
+| **复审 P2 backlog（第三轮复审遗留）** | ① 块式 YAML 经 sun_vault_meta 重写丢字段（解析器只认扁平+行内数组）② 沙箱 fail-open 默认 → fail-closed + workspaceRoot 钉死 ③ worker-guard 字面量可绕（正则加固）④ 看板 Journal 反链扩近 7 天 ⑤ client/server 两套 frontmatter 解析器合一 |
+| 需求/缺陷数据源（P3-2） | **待用户输入**：公司工单系统是哪家（钉钉项目/云效/Jira/自建）→ 决定接入路线 |
