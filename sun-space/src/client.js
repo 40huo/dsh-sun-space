@@ -95,6 +95,16 @@ window.__ModuleLoader__.load({
         borderLeftWidth: 3, borderRadius: 8, padding: '8px 12px', marginBottom: 6,
       })
 
+      class SunErrorBoundary extends React.Component {
+        constructor(props) { super(props); this.state = { err: null } }
+        static getDerivedStateFromError(e) { return { err: e } }
+        render() {
+          return this.state.err
+            ? h('pre', { style: { color: '#e8634d', fontSize: 12, padding: 12, whiteSpace: 'pre-wrap' } }, 'WB-ERROR: ' + String(this.state.err?.stack || this.state.err).slice(0, 600))
+            : this.props.children
+        }
+      }
+
       function Workbench() {
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
@@ -133,6 +143,7 @@ window.__ModuleLoader__.load({
         const openSchedules = () => { try { hostCtx.layout.selectPanel('schedules') } catch (e) { D.errors.push('openSchedules: ' + String(e)) } }
 
         return h('div', { style: { padding: '20px 30px', maxWidth: 960 } }, [
+          h('div', { key: 'mark', style: { color: '#57b26a', fontSize: 11, fontFamily: 'monospace' } }, 'WB-MARKER: workbench rendered'),
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
             h(SunIcon, { key: 'i', size: 22 }),
             h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
