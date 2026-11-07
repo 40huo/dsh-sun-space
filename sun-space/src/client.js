@@ -14,6 +14,7 @@ window.__ModuleLoader__.load({
       D.phase = 'react-ok'
 
       const PANEL_ID = 'sun-space'
+      let hostCtx = null // apply 时捕获，卡片点击跳转会话用
       const VAULT = '/Users/40huo/Workspace/sun-vault'
       const SCOPE_SESSION = 'session-f9ab8ca6-40bc-40ed-acb9-c52a620f98d6' // 固定 router 会话（scope 解析用）
 
@@ -140,7 +141,10 @@ window.__ModuleLoader__.load({
           // ===== 派活树：Router 卡 → 肘形连接线 → 任务卡 =====
           h('div', { key: 'tree', style: { position: 'relative', paddingLeft: 26 } }, [
             // Router 根卡
-            h('div', { key: 'root', style: {
+            h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => {
+              try { hostCtx.uiWorkspace.openSession(SCOPE_SESSION) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+            }, style: {
+              cursor: 'pointer',
               display: 'inline-flex', alignItems: 'center', gap: 10,
               border: anyRunning ? '1px solid rgba(87,178,106,0.55)' : '1px solid rgba(128,128,128,0.3)',
               background: anyRunning ? 'rgba(87,178,106,0.10)' : 'transparent',
@@ -165,7 +169,10 @@ window.__ModuleLoader__.load({
                 borderLeft: '2px solid rgba(128,128,128,0.35)', borderBottom: '2px solid rgba(128,128,128,0.35)', borderTop: '2px solid rgba(128,128,128,0.35)',
                 borderTopLeftRadius: 6,
               } }),
-              h('div', { key: 'card', style: {
+              h('div', { key: 'card', title: '点击打开对应会话', onClick: () => {
+                try { hostCtx.uiWorkspace.openSession(t.session || SCOPE_SESSION) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+              }, style: {
+                cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 10,
                 border: `1px solid ${t.status === 'need-confirm' ? STATUS_META['need-confirm'].color : 'rgba(128,128,128,0.25)'}`,
                 borderLeftWidth: 3, borderLeftColor: STATUS_META[t.status]?.color || '#999',
@@ -188,9 +195,10 @@ window.__ModuleLoader__.load({
       }
 
       return {
-        inject: ['slots'],
+        inject: ['slots', 'uiWorkspace'],
         apply(ctx) {
           D.phase = 'apply-entered'
+          hostCtx = ctx
           try {
             ctx.slots.inject('sidebar.panellist', () => {
               D.panellistRegistered = true
