@@ -1,12 +1,14 @@
 /**
- * sun-space client 插件（v9：工作台精简版）。
- * 任务派活树 + 直达子会话；定时任务跳转 DSH 原生"自动化任务"面板（零重复实现）。
- * 数据通道：workspaceFiles 既有 remote（vault 直读）——零新增宿主代码。
+ * sun-space client 插件（v11：工作台 = Router 会话上的 tab）。
+ * 载体：conversation.view 槽（原生"对话/轨迹/上下文/编队"同款挂点，主理鱼同款模式）——
+ * 侧栏入口已删（用户决策 2026-11-08：唯一引导方式是 README 说明"打开 Router 会话 → 工作台 tab"）。
+ * 三态渲染：当前会话 = state.json 解析的 Router 会话 → 完整工作台（含新增定时任务表单，
+ * target 自动绑当前会话）；非 Router 会话 → 跳转引导卡；无 Router 会话 → 初始化面板。
  */
 window.__ModuleLoader__.load({
   id: 'sun-space/client',
   factory(require) {
-    const D = { phase: 'factory-entered', errors: [] }
+    const D = { phase: 'factory-entered', errors: [], currentSessionId: null }
     try {
       window.__sunSpaceDebug = D
       const React = require('react')
@@ -17,9 +19,9 @@ window.__ModuleLoader__.load({
       const PANEL_ID = 'sun-space'
       const VAULT = '/Users/40huo/Workspace/sun-vault'
       // 架构 §4.1 不变量：呈现层不得持有会话 id 常量（Router 会话会周期轮换）。
-      // 当前会话解析链：session/list（cwd=VAULT 的 sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
-      // state.json 写回：① 创建会话后经 session/prompt 引导自登记；② 晨报自检发现不一致自动修正（轮换后自愈）。
-      const WB_REV = 'v10' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      // 当前会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
+      // state.json 写回：① 创建会话后经 session/prompt 引导自登记；② 晨报自检发现不一致自动修正（轮换自愈）。
+      const WB_REV = 'v11' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -81,10 +83,13 @@ window.__ModuleLoader__.load({
         'session/list': a => ({ _request: a ?? {} }),
         'session/create': a => ({ request: a }),
         'session/prompt': a => ({ request: a }),
+        'schedule/list': a => ({ request: a ?? {} }),
+        'schedule/create': a => ({ request: a }),
+        'schedule/edit': a => ({ request: a }),
       }
       const gw = (method, args) => gateway(method, (GW_SHAPE[method] ?? (x => x))(args))
 
-      // vault 读取通道：scope 必须是一个 cwd 覆盖 vault 的会话（workspaceFileScopeId 类型即 SessionId）
+      // vault 读取通道：scope 是任一同工作区会话 id（workspaceFileScopeId 类型即 SessionId）
       const readVaultFile = (sessionId, path, limit) => gw('workspaceFiles/read', {
         workspaceFileScopeId: sessionId, path, range: { limit },
       }).then(v => v.text || '')
@@ -109,9 +114,17 @@ window.__ModuleLoader__.load({
         return candidates[0].sessionId
       }
 
-      // ===== 初始化检查（顺序：②插件 → ③会话 → ①vault；①依赖③的 scope 才能读文件）=====
-      async function runInitChecks() {
+      // ===== 初始化检查（在任何会话的 tab 上都能跑；① 用当前会话作 workspaceFiles scope）=====
+      async function runInitChecks(currentSessionId) {
         const c = { vault: false, presets: false, routerSession: null, notes: [] }
+        // ① 知识库：读 runbook 探测
+        if (currentSessionId) {
+          try { await readVaultFile(currentSessionId, `${VAULT}/90-Meta/runbook.md`, 10); c.vault = true } catch {
+            c.notes.push(`知识库未就绪（当前配置路径 ${VAULT}）：① 用 Obsidian 打开/创建该目录 ② 完成 90-Meta 骨架初始化（可让任意 Router 会话执行"初始化知识库"指令） ③ 重启实例后重新检查`)
+          }
+        } else {
+          c.notes.push('知识库检查需要会话作读取通道 → 先创建会话')
+        }
         // ② 依赖插件：预设 roster 健康 = 智能体协作链路可用（missing/broken → 插件面板手动开启）
         try {
           const v = await gw('agentPresets/list', {})
@@ -130,14 +143,6 @@ window.__ModuleLoader__.load({
           if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
         } catch {
           c.notes.push('会话列表不可达 → 重试或检查实例')
-        }
-        // ① 知识库：读 runbook 探测（需要③的会话作 workspaceFiles scope）
-        if (c.routerSession) {
-          try { await readVaultFile(c.routerSession, `${VAULT}/90-Meta/runbook.md`, 10); c.vault = true } catch {
-            c.notes.push(`知识库未就绪（当前配置路径 ${VAULT}）：① 用 Obsidian 打开/创建该目录 ② 完成 90-Meta 骨架初始化（可让任意 Router 会话执行"初始化知识库"指令） ③ 重启实例后重新检查`)
-          }
-        } else {
-          c.notes.push('知识库检查需要 Router 会话作读取通道 → 先完成 ③')
         }
         return c
       }
@@ -164,37 +169,6 @@ window.__ModuleLoader__.load({
         } catch (e) { D.errors.push('bootstrapRouterSession: ' + String(e)); return false }
       }
 
-      function InitPanel({ checks, onRetry }) {
-        const rows = [
-          { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${VAULT}` },
-          { ok: checks.presets, title: '② 依赖插件（智能体协作 / 子智能体）', desc: checks.notes.find(n => n.includes('预设') || n.includes('插件')) || '已就绪', action: checks.presets ? null : 'plugins' },
-          { ok: !!checks.routerSession, title: '③ Router 会话（sun-router 预设）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : (checks.notes.find(n => n.includes('Router 会话')) || '不存在'), action: checks.presets && !checks.routerSession ? 'create-router' : null },
-        ]
-        return h('div', null, [
-          h('p', { key: 'h', style: { fontWeight: 600, fontSize: 14, margin: '0 0 12px' } }, '初始化检查'),
-          ...rows.map(r => h('div', { key: r.title, style: { ...cardStyle(r.ok ? '#57b26a' : '#e8a24d'), alignItems: 'flex-start', marginBottom: 8 } }, [
-            h('span', { key: 'dot', style: { width: 10, height: 10, borderRadius: 5, background: r.ok ? '#57b26a' : '#e8a24d', display: 'inline-block', marginTop: 4 } }),
-            h('div', { key: 'b', style: { flex: 1 } }, [
-              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13 } }, (r.ok ? '✓ ' : '✗ ') + r.title),
-              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, r.desc),
-            ]),
-            r.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
-            r.action === 'create-router' ? h('button', { key: 'a', onClick: async () => {
-              try {
-                const v = await createRouterSession()
-                const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
-                if (sid) {
-                  await bootstrapRouterSession(sid) // 自登记 state.json（失败不阻断——下次检查由最近活跃兜底）
-                  hostCtx.uiWorkspace.openSession(sid)
-                  onRetry() // 重新解析会话并刷新看板（闭环：创建 → 登记 → 重检全绿）
-                }
-              } catch (e) { D.errors.push(String(e)) }
-            }, style: btnStyle }, '创建 Router 会话') : null,
-          ])),
-          h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),
-        ])
-      }
-
       async function loadTasks(routerSession) {
         if (!routerSession) return []
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
@@ -215,6 +189,7 @@ window.__ModuleLoader__.load({
         return tasks
       }
 
+      // ===== SunIcon =====
       function SunIcon({ size }) {
         const rays = []
         for (let i = 0; i < 8; i++) {
@@ -237,6 +212,7 @@ window.__ModuleLoader__.load({
         border: `1px solid ${borderColor || 'rgba(128,128,128,0.25)'}`,
         borderLeftWidth: 3, borderRadius: 8, padding: '8px 12px', marginBottom: 6,
       })
+      const inputStyle = { fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', width: '100%', boxSizing: 'border-box' }
 
       class SunErrorBoundary extends React.Component {
         constructor(props) { super(props); this.state = { err: null } }
@@ -248,16 +224,121 @@ window.__ModuleLoader__.load({
         }
       }
 
-      function Workbench() {
+      function InitPanel({ checks, currentSessionId, onRetry }) {
+        const rows = [
+          { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${VAULT}` },
+          { ok: checks.presets, title: '② 依赖插件（智能体协作 / 子智能体）', desc: checks.notes.find(n => n.includes('预设') || n.includes('插件')) || '已就绪', action: checks.presets ? null : 'plugins' },
+          { ok: !!checks.routerSession, title: '③ Router 会话（sun-router 预设）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : (checks.notes.find(n => n.includes('Router 会话')) || '不存在'), action: checks.presets && !checks.routerSession ? 'create-router' : null },
+        ]
+        return h('div', null, [
+          h('p', { key: 'h', style: { fontWeight: 600, fontSize: 14, margin: '0 0 12px' } }, '初始化检查'),
+          ...rows.map(r => h('div', { key: r.title, style: { ...cardStyle(r.ok ? '#57b26a' : '#e8a24d'), alignItems: 'flex-start', marginBottom: 8 } }, [
+            h('span', { key: 'dot', style: { width: 10, height: 10, borderRadius: 5, background: r.ok ? '#57b26a' : '#e8a24d', display: 'inline-block', marginTop: 4 } }),
+            h('div', { key: 'b', style: { flex: 1 } }, [
+              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13 } }, (r.ok ? '✓ ' : '✗ ') + r.title),
+              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, r.desc),
+            ]),
+            r.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
+            r.action === 'create-router' ? h('button', { key: 'a', onClick: async () => {
+              try {
+                const v = await createRouterSession()
+                const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
+                if (sid) {
+                  await bootstrapRouterSession(sid) // 自登记 state.json（失败不阻断——下次检查由最近活跃兜底）
+                  try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+                  onRetry() // 新会话的 tab 即完整工作台（state.json 已指向它）
+                }
+              } catch (e) { D.errors.push(String(e)) }
+            }, style: btnStyle }, '创建 Router 会话') : null,
+          ])),
+          h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),
+        ])
+      }
+
+      // ===== 定时任务区：列表 + 新建表单（target 自动绑当前 Router 会话，补 UI 无 session 选项的缺口）=====
+      function ScheduleSection({ routerSession }) {
+        const [sched, setSched] = React.useState({ loading: true, items: [], error: null })
+        const [form, setForm] = React.useState({ title: '', cron: '0 9 * * 1-5', prompt: '', busy: false, msg: null })
+        const loadSched = React.useCallback(() => {
+          setSched(s => ({ ...s, loading: true, error: null }))
+          gw('schedule/list', {}).then(v => setSched({ loading: false, items: v?.items ?? [], error: null }))
+            .catch(e => setSched(s => ({ ...s, loading: false, error: String(e.message || e) })))
+        }, [])
+        React.useEffect(() => { loadSched() }, [loadSched])
+
+        const submit = async () => {
+          if (!form.title.trim() || !form.cron.trim() || !form.prompt.trim()) {
+            setForm(f => ({ ...f, msg: '标题 / cron / 指令都不能为空' })); return
+          }
+          if (form.cron.trim().split(/\s+/).length !== 5) {
+            setForm(f => ({ ...f, msg: 'cron 须为 5 段 Vixie 格式（分 时 日 月 周），如 0 9 * * 1-5' })); return
+          }
+          setForm(f => ({ ...f, busy: true, msg: null }))
+          try {
+            const v = await gw('schedule/create', {
+              title: form.title.trim(), prompt: form.prompt.trim(),
+              timing: { kind: 'cron', cron: { expression: form.cron.trim(), time_zone: 'Asia/Shanghai' } },
+              target: { kind: 'session', sessionId: routerSession },
+            })
+            const sid = v?.id ?? '?'
+            setForm({ title: '', cron: '0 9 * * 1-5', prompt: '', busy: false, msg: `✅ 已创建并绑定当前 Router 会话：${sid.slice(0, 24)}…` })
+            loadSched()
+          } catch (e) {
+            setForm(f => ({ ...f, busy: false, msg: '创建失败：' + String(e.message || e).slice(0, 140) }))
+          }
+        }
+        const rm = async (id) => {
+          try { await gw('schedule/edit', { id, action: 'delete' }); loadSched() } catch (e) { D.errors.push('rm: ' + String(e)) }
+        }
+
+        const active = sched.items.filter(s => s.status === 'active' && s.kind === 'cron')
+        const others = sched.items.filter(s => !(s.status === 'active' && s.kind === 'cron'))
+        return h('div', { key: 'sched', style: { marginTop: 22 } }, [
+          h('div', { key: 'h', style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 } }, [
+            h('h2', { key: 't', style: { margin: 0, fontSize: 16 } }, '⏰ 定时任务'),
+            h('span', { key: 'd', style: { fontSize: 11, opacity: 0.6 } }, 'target 自动绑定当前 Router 会话 · 改时间/启停去自动化任务面板'),
+          ]),
+          sched.loading ? h('p', { key: 'l', style: { opacity: 0.6, fontSize: 12 } }, '加载中…') : null,
+          sched.error ? h('p', { key: 'e', style: { color: '#e8634d', fontSize: 12 } }, '加载失败：' + sched.error) : null,
+          ...active.map(s => h('div', { key: s.id, style: cardStyle() }, [
+            h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: '#57b26a', display: 'inline-block' } }),
+            h('span', { key: 't', style: { fontSize: 13, fontWeight: 600 } }, s.title),
+            h('span', { key: 'c', style: { fontSize: 11, opacity: 0.6, fontFamily: 'monospace' } }, s.expression ?? ''),
+            s.target?.sessionId !== routerSession ? h('span', { key: 'drift', style: { fontSize: 11, color: '#e8a24d' }, title: `target=${s.target?.sessionId ?? '?'}` }, '✗ target 漂移') : null,
+            h('button', { key: 'rm', onClick: () => rm(s.id), style: { ...btnStyle, marginLeft: 'auto', color: '#e8634d' } }, '删除'),
+          ])),
+          others.length > 0 ? h('details', { key: 'oth', style: { marginBottom: 6 } }, [
+            h('summary', { style: { fontSize: 12, opacity: 0.6, cursor: 'pointer' } }, `历史/一次性（${others.length}）`),
+            ...others.map(s => h('div', { key: s.id, style: { ...cardStyle(), opacity: 0.6 } }, [
+              h('span', { key: 't', style: { fontSize: 12 } }, s.title),
+              h('span', { key: 's', style: { fontSize: 11, opacity: 0.7 } }, s.status),
+            ])),
+          ]) : null,
+          // 新建表单
+          h('div', { key: 'form', style: { border: '1px dashed rgba(128,128,128,0.4)', borderRadius: 8, padding: '10px 12px', marginTop: 8 } }, [
+            h('div', { key: 'ft', style: { fontSize: 12, fontWeight: 600, marginBottom: 6 } }, '＋ 新增定时任务（cron，工作日建议 1-5）'),
+            h('input', { key: 'title', placeholder: '标题，如：Sun 生活提醒', value: form.title, onChange: e => setForm(f => ({ ...f, title: e.target.value })), style: { ...inputStyle, marginBottom: 6 } }),
+            h('input', { key: 'cron', placeholder: 'cron：分 时 日 月 周（五段），时区固定 Asia/Shanghai', value: form.cron, onChange: e => setForm(f => ({ ...f, cron: e.target.value })), style: { ...inputStyle, marginBottom: 6, fontFamily: 'monospace' } }),
+            h('textarea', { key: 'prompt', placeholder: '任务指令（薄引用写法：按 runbook §N 执行……）', value: form.prompt, onChange: e => setForm(f => ({ ...f, prompt: e.target.value })), rows: 3, style: { ...inputStyle, marginBottom: 6, resize: 'vertical' } }),
+            h('div', { key: 'act', style: { display: 'flex', alignItems: 'center', gap: 10 } }, [
+              h('button', { key: 'go', onClick: submit, disabled: form.busy, style: { ...btnStyle, opacity: form.busy ? 0.5 : 1 } }, form.busy ? '创建中…' : '创建'),
+              form.msg ? h('span', { key: 'msg', style: { fontSize: 12, opacity: 0.8 } }, form.msg) : null,
+            ]),
+          ]),
+        ])
+      }
+
+      function Workbench(props) {
+        // conversation.view 的 inject(sessionId) 捕获当前会话；props 兜底
+        const sessionId = props?.sessionId ?? D.currentSessionId ?? null
         const [init, setInit] = React.useState({ checking: true, checks: null })
         const runChecks = React.useCallback(() => {
           setInit({ checking: true, checks: null })
-          runInitChecks().then(checks => setInit({ checking: false, checks }))
-        }, [])
+          runInitChecks(sessionId).then(checks => setInit({ checking: false, checks }))
+        }, [sessionId])
         React.useEffect(() => { runChecks() }, [runChecks])
         const routerSession = init.checks?.routerSession ?? null
-        // 三项全绿才进看板：只缺 Router 会话时同样要出初始化面板（否则 ③ 的提示与创建按钮不可达——轮换后实际踩过）
-        const allReady = !!(init.checks && init.checks.vault && init.checks.presets && routerSession)
+        const isRouterView = !!(routerSession && sessionId && routerSession === sessionId)
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
@@ -282,8 +363,8 @@ window.__ModuleLoader__.load({
 
         const openTaskSession = (t) => {
           const target = t.session || routerSession
-          if (!target) { D.errors.push('openTaskSession: 无目标会话（任务无 session 字段且 Router 会话未解析）'); return }
-          // 隐式契约（勿破坏）：跳转会卸载工作台 → aliveRef 置 false → 重试自停；
+          if (!target) { D.errors.push('openTaskSession: 无目标会话'); return }
+          // 隐式契约（勿破坏）：跳转会卸载会话视图 → aliveRef 置 false → 重试自停；
           // 若未来挂载结构改为"跳转不卸载"，这里的 12×800ms 重试会变成劫持导航十秒。
           let attempts = 0
           const tryOpen = () => {
@@ -297,25 +378,44 @@ window.__ModuleLoader__.load({
         }
         const openSchedules = () => { try { hostCtx.layout.selectPanel('schedules') } catch (e) { D.errors.push('openSchedules: ' + String(e)) } }
 
+        // ===== 降级态：非 Router 会话 =====
+        if (init.checks && routerSession && !isRouterView) {
+          return h('div', { style: { padding: '20px 30px', maxWidth: 960 }, 'data-wb-rev': WB_REV }, [
+            h(SunErrorBoundary, { key: 'eb' }, [
+              h('div', { key: 'g', style: cardStyle('#e8a24d') }, [
+                h(SunIcon, { key: 'i', size: 20 }),
+                h('div', { key: 'b', style: { flex: 1, fontSize: 13, lineHeight: 1.7 } }, [
+                  h('div', { key: 't', style: { fontWeight: 600 } }, '本会话不是当前 Router 会话'),
+                  h('div', { key: 'd', style: { opacity: 0.7, fontSize: 12 } }, `Sun 工作台在 Router 会话上（当前：${routerSession.slice(0, 28)}…）。派活树、定时任务与初始化检查都在那边。`),
+                ]),
+                h('button', { key: 'go', onClick: () => { try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开 Router 会话'),
+              ]),
+            ]),
+          ])
+        }
+
         return h('div', { style: { padding: '20px 30px', maxWidth: 960 }, 'data-wb-rev': WB_REV }, [
           h(SunErrorBoundary, { key: 'eb' }, [
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
             h(SunIcon, { key: 'i', size: 22 }),
             h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
-            h('button', { key: 'r', onClick: reload, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
+            h('button', { key: 'r', onClick: () => { reload(); runChecks() }, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
-          !allReady && h('div', { key: 'init', style: { marginBottom: 16 } }, [
-            init.checking ? h('p', { key: 'w', style: { opacity: 0.6, fontSize: 13 } }, '初始化检查中…') : h(InitPanel, { key: 'ip', checks: init.checks, onRetry: runChecks }),
-          ]),
-          allReady && h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
+          // 初始化面板：三项检查任一未就绪时出现（含无 Router 会话的场景）
+          init.checking ? h('p', { key: 'w', style: { opacity: 0.6, fontSize: 13 } }, '初始化检查中…') : null,
+          !init.checking && init.checks && !(init.checks.vault && init.checks.presets && routerSession)
+            ? h('div', { key: 'init', style: { marginBottom: 16 } }, h(InitPanel, { key: 'ip', checks: init.checks, currentSessionId: sessionId, onRetry: runChecks }))
+            : null,
+          !isRouterView && h('p', { key: 'wait', style: { opacity: 0.6, fontSize: 13 } }, '初始化完成后，这里会展示派活树与定时任务。'),
+          isRouterView && h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
               h('span', { key: 'l', style: { fontSize: 13 } }, `${label} ${n}`),
             ]))),
           state.error && h('p', { key: 'err', style: { color: '#e8634d', fontSize: 13 } }, '加载失败：' + state.error),
 
-          // ===== 派活树 =====
-          h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => { if (!routerSession) { D.errors.push('root click: Router 会话未解析'); return } try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: {
+          // ===== 派活树（仅 Router 视图）=====
+          isRouterView && h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => { try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: {
             display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer',
             border: anyRunning ? '1px solid rgba(87,178,106,0.55)' : '1px solid rgba(128,128,128,0.3)',
             background: anyRunning ? 'rgba(87,178,106,0.10)' : 'transparent',
@@ -324,15 +424,15 @@ window.__ModuleLoader__.load({
             h(SunIcon, { key: 'av', size: 24 }),
             h('div', { key: 'n', style: { display: 'flex', flexDirection: 'column', gap: 2 } }, [
               h('span', { key: 'a', style: { fontWeight: 600, fontSize: 14 } }, 'Sun Router'),
-              h('span', { key: 'b', style: { fontSize: 11, opacity: 0.65 } }, '只分派 · sun-router 预设'),
+              h('span', { key: 'b', style: { fontSize: 11, opacity: 0.65 } }, '只分派 · sun-router 预设 · 本会话'),
             ]),
             h('span', { key: 'st', style: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 } }, [
               h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: anyRunning ? '#57b26a' : '#9e9e9e', display: 'inline-block' } }),
               anyRunning ? '干活中' : '待命',
             ]),
           ]),
-          tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
-          ...tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
+          isRouterView && tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
+          isRouterView && tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
             h('div', { key: 'elbow', style: { position: 'absolute', left: 13, top: -8, width: 8, height: 30, borderLeft: '2px solid rgba(128,128,128,0.35)', borderBottom: '2px solid rgba(128,128,128,0.35)', borderTop: '2px solid rgba(128,128,128,0.35)', borderTopLeftRadius: 6 } }),
             h('div', { key: 'card', title: '点击打开对应会话', onClick: () => openTaskSession(t), style: {
               cursor: 'pointer', ...cardStyle(t.status === 'need-confirm' ? STATUS_META['need-confirm'].color : undefined),
@@ -348,22 +448,17 @@ window.__ModuleLoader__.load({
               t.status === 'need-confirm' ? h('span', { key: 'wait', style: { fontSize: 12, color: STATUS_META['need-confirm'].color, marginLeft: 'auto' } }, '等你决策 →') : null,
             ]),
           ])),
-          tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
+          isRouterView && tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
 
-          // ===== 入口卡片 =====
-          h('div', { key: 'entries', style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 12, marginTop: 18 } }, [
-            h('div', { key: 'sched', onClick: openSchedules, title: '打开自动化任务面板', style: {
-              border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer',
-            } }, [
-              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '⏰ 定时任务'),
-              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, '晨报 08:45 · 日报 18:30（工作日）——管理、启停与新增在自动化任务面板'),
-            ]),
-            h('div', { key: 'journal', title: 'Journal 在 Obsidian 中查看与编辑', style: {
-              border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px',
-            } }, [
-              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
-              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
-            ]),
+          // ===== 定时任务（列表 + 新建表单，仅 Router 视图）=====
+          isRouterView && routerSession ? h(ScheduleSection, { key: 'schedsec', routerSession }) : null,
+
+          // ===== Journal 入口卡（仅 Router 视图）=====
+          isRouterView && h('div', { key: 'journal', title: 'Journal 在 Obsidian 中查看与编辑', style: {
+            border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px', marginTop: 18,
+          } }, [
+            h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
+            h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
           ]),
           ]),
         ])
@@ -375,13 +470,18 @@ window.__ModuleLoader__.load({
           D.phase = 'apply-entered'
           hostCtx = ctx
           try {
-            ctx.slots.inject('sidebar.panellist', () => {
-              D.panellistRegistered = true
-              return ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 5, label: () => 'Sun 工作台' }, SunIcon)
-            })
-            ctx.slots.inject('main', () => {
-              D.mainRegistered = true
-              return ctx.slots.register({ name: 'main', key: PANEL_ID }, Workbench)
+            // 工作台唯一载体：Router 会话上的 tab（原生"对话/轨迹"同款 conversation.view 槽）。
+            // 侧栏入口已删（用户决策 2026-11-08）：引导方式 = README"打开 Router 会话 → 工作台 tab"。
+            // 非 Router 会话上 tab 显示跳转引导卡；无 Router 会话时显示初始化面板。
+            ctx.slots.inject('conversation.view', () => {
+              D.tabRegistered = true
+              return ctx.slots.register({
+                name: 'conversation.view',
+                id: PANEL_ID,
+                order: 40,
+                label: () => '工作台',
+                inject: (sessionId) => { D.currentSessionId = sessionId; return {} },
+              }, Workbench)
             })
             D.phase = 'apply-done'
           } catch (e) {

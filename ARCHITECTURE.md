@@ -2,9 +2,10 @@
 
 > **基于 DeepSeek Harness 的个人 AI 融合工作空间**
 >
-> 版本 v0.4.1 · 2026-11-08 · 状态：P0/P1 已实施，生产运行中；P2 收尾完成，P3 启动
+> 版本 v0.4.2 · 2026-11-08 · 状态：P0/P1 已实施，生产运行中；P2 收尾完成，P3 启动
 > **v0.4 变更**：对齐实现现实——业务定时已迁 DSH 原生自动化任务（代码零 cron，§5.3）；侧栏形态定稿为工作台单页（§8.6）；§4.1 补 sun_route 宿主薄包装与 Router 会话周期轮换决策（W45 反思）
 > **v0.4.1 变更**（第三轮复审）：§4.1 新增"会话 id 非常量"不变量与 state.json 事实源闭环；§8.6 删除拍板按钮行（22f88db 已删按钮，v0.4 误植回架构，已纠正）；§5.1/§2.1/§2.2/§2.3/§6.6/§9.1/附录 B4 全部对齐实现（一次改完，不留半途快照）
+> **v0.4.2 变更**（用户拍板）：工作台载体从侧栏单页迁至 Router 会话 tab（conversation.view 槽），侧栏入口删除、README 承担引导；新增定时任务表单内嵌工作台（target 自动绑当前会话，补原生 UI 无 session 选项缺口）；版本头相应更新
 > **交接与现状**：新会话/接手请先读 [HANDOFF.md](HANDOFF.md)（当前状态、启动命令、机制速查、踩坑记录）
 > 本文档所在 workspace（`dsh-sun-space`）承载架构文档与未来的插件/技能代码；知识库本体是独立的 Obsidian vault，下文以 `<VAULT_PATH>` 指代。
 
@@ -12,7 +13,7 @@
 
 ## 0. TL;DR
 
-**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 dws 轮询 Source、`sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 工作台**（client 插件单页：派活树/初始化检查/入口卡，§8.6）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
+**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 dws 轮询 Source、`sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 工作台**（Router 会话上的 tab，§8.6）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
 
 ```mermaid
 flowchart TB
@@ -39,7 +40,7 @@ flowchart TB
     end
 
     HOOK["Preset 工具白名单 + 命令黑名单<br/>（TS，Agent 外部硬边界）"]
-    P["DSH 工作台（client 插件）<br/>派活树 · 初始化检查 · 入口卡"]
+    P["工作台（Router 会话上的 tab）<br/>派活树 · 定时任务 · 初始化检查"]
 
     U1 -->|"确认 / 调整 / 临时指令"| R
     R -->|"通知 / 确认请求 / 日报（≤100字）"| U1
@@ -121,7 +122,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
 | 定时触发（晨报/日报/Watchdog/周复盘） | DSH 原生"自动化任务"（cron + prompt 指向 Router 会话，UI 可视可启停） | 平台能力（代码零 cron） |
 | 环境变化感知 | Source 单次 exec dws 查询命令 + vault 状态 diff（无长连接）→ 产生 Trigger | TS |
 | 钉钉通知/确认推送 | `sun_notify` 工具 → `dws.ts` 直接 exec `dws chat`，**不经 LLM**（零 token、零延迟） | TS |
-| 工作台 | client 插件注册侧栏入口 + 单页工作台（初始化检查/派活树/入口卡，见 §8.6） | JS（client） |
+| 工作台 | client 插件注册 conversation.view 槽 = Router 会话上的"工作台" tab（§8.6） | JS（client） |
 | 能力封装（晨报/日报/反思） | 流程文本内联在 schedule prompt + runbook §5/§7/§10 规则 + `90-Meta/schemas.md` 契约 | Markdown |
 | 钉钉数据读写 | dws CLI（Worker 经 Bash 调用；Source 经 exec 调用） | 官方 CLI |
 | IM→Agent 直连 | `dws dev connect` | 待验证（§6.4） |
@@ -523,21 +524,23 @@ tags: [work, defect, payment]
 | **never-do**（即使确认也不做） | 自动连续审批、代我签电子文件、访问他人账号 | — |
 | **可放行**（默认自由） | 读一切我可见的数据、vault 读写、`--dry-run` 写预览、资料检索与草拟 | 结论注明出处 |
 
-### 8.6 工作台（DSH 原生 client 插件 · 形态定稿 v9）
+### 8.6 工作台（Router 会话上的 tab · 形态定稿 v11）
 
-会话式 UI 不适合 personal agent：人需要一眼看到"谁在干什么、什么在等我"。**呈现面是 `sun-space` 插件的 client 部分**（单页工作台，非多 Tab 面板）。
+会话式 UI 不适合 personal agent：人需要一眼看到"谁在干什么、什么在等我"。**呈现面是 Router 会话视图上的一个 tab**——经 `conversation.view` 槽注册（原生"对话/轨迹/上下文/编队"同款挂点，社区插件主理鱼同款模式），tab 名"工作台"。
 
-> v0.4 定稿：初版规划的"五 Tab 面板"在实施中被用户驱动的迭代取代——v9 精简的原则是**平台已有的呈现不重复造**（定时管理跳原生"自动化任务"面板，Journal 用 Obsidian 打开）。工作台只保留平台没有的部分：
+> v0.4.2 定稿（用户拍板 2026-11-08）：工作台从侧栏单页搬进 Router 会话 tab，**侧栏入口删除**，引导方式 = README（"打开 Router 会话 → 工作台 tab"）。动机：① Router 会话是单例（state.json + 轮换），tab 随会话走、轮换自动继承；② **新增定时任务的表单就放在 tab 里，target 隐式 = 当前会话**——原生 UI 缺 session 选项的缺口由自己的视图补上，用户不再需要命令行；③ 状态（tab）与决策（对话流 ask 卡）同屏。演进：五 Tab 面板 → 侧栏单页（v9）→ 会话 tab（v11）。
 
-| 区块 | 内容 |
-|------|------|
-| 初始化检查 | 三行自检（vault 可写 / 依赖插件 roster / Router 会话在位）+ 引导按钮；失败路径可点修复 |
-| 派活树 | 任务卡片（proposed → running → need-confirm → done/blocked）；need-confirm 琥珀色标「等你决策 →」，**点击直达对应会话**（Router 或 Worker 子会话，经任务笔记 `session` 字段） |
-| 入口卡 | 自动化任务面板（定时管理）+ 当日 Journal（Obsidian） |
+**三态渲染**（按当前会话与 state.json 解析结果比对）：
+
+| 态 | 条件 | 内容 |
+|---|---|---|
+| 完整工作台 | 当前会话 = 解析出的 Router 会话 | 计数条 + 派活树 + 定时任务（列表✓对齐标记/新建表单/删除）+ Journal 入口卡 |
+| 跳转引导 | 非 Router 会话（普通/Worker） | "本会话不是当前 Router 会话（当前：xxx）" + 打开 Router 会话按钮 |
+| 初始化面板 | 无 Router 会话（或 vault/预设未就绪） | 三行自检 + 「创建 Router 会话」（创建 → session/prompt 自登记 state.json → 跳转新会话） |
+
+派活树任务卡 need-confirm 琥珀色标「等你决策 →」，**点击直达对应会话**（经任务笔记 `session` 字段）；定时任务行带 target 漂移检测（✗ 标记）。命令行 `pnpm sun:schedule`（list/add/retarget/rm）保留为脚本化备选。
 
 **设计原则**沿用原型 Panel 七原则：quiet by default、一处一概念、与 DSH 设计语言一致；决策不在工作台真空环境做（§8.7）。Obsidian Bases 看板（§3.4）保留为持久面——同一份 frontmatter 数据，两个视图。
-
-> 佐证：dsh-superagent-prototype 的 `docs/005-panel` 验证了"super-agent 需要会话之外的呈现面"；本项目的差异是收敛为单页 + 平台原生入口，避免双份真相源。
 
 ### 8.7 确认卡片
 
@@ -592,7 +595,7 @@ tags: [work, defect, payment]
 |------|------|---------|
 | **P0 骨架（约 1 天）** | 建 vault 目录 + memory/runbook 初始内容；`dws auth login` 登录开通；纯对话手动跑一次 morning-brief（无插件） | 晨报产出 Journal 计划区 + 任务笔记，我口头确认后手动派发 |
 | **P1 插件闭环（约 1 周）** | `sun-space` 插件骨架：`apply` 入口 + `sessions.ts` 双预设白名单 + dws Source（定时/轮询）+ `notify.ts`；dws 数据全通；任务落库流程固化 | 连续 3 个工作日无人值守完成"晨报→确认→执行→落库→日报"；Router 全程未亲自执行（工具层保证） |
-| **P2 交互与反思（约 1 周）** | client 工作台（§8.6 单页定稿）；确认卡片流（§8.7）；日报反馈→反思→runbook 修订闭环；实测 `dws dev connect` 协议（§6.4，待机器人应用）；Watchdog | 一次日报意见切实改变次日行为；一次"轮询发现新审批并主动处理"；工作台一屏看清当日全局 |
+| **P2 交互与反思（约 1 周）** | client 工作台（§8.6，v0.4.2 定稿为会话 tab）；确认卡片流（§8.7）；日报反馈→反思→runbook 修订闭环；实测 `dws dev connect` 协议（§6.4，待机器人应用）；Watchdog | 一次日报意见切实改变次日行为；一次"轮询发现新审批并主动处理"；工作台一屏看清当日全局 |
 | **P3 扩展（持续）** | 需求/缺陷数据源接入（§6.5）；生活领域（财务/健康/学习）分域扩展；闲时整理任务（vault 索引优化、双链补全）；（可选）`dws event consume` 有界窗口实验压低感知延迟 | 非工作领域同样形成"发现→规划→执行→沉淀"闭环 |
 
 ---

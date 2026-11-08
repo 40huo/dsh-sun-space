@@ -18,7 +18,7 @@
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
 | 插件（sun-space） | ✅ 双预设 + 5 工具 + Source 轮询 + 初始化检查面板 | lib/*.mjs（tsdown 构建） |
-| 工作台 | ✅ 派活树 + 卡片直达子会话 + 定时/Journal 入口卡 | 截图见反思 2026-W45 |
+| 工作台 | ✅ **Router 会话上的 tab**（conversation.view 槽，v0.4.2）——派活树 + 定时任务列表/新建表单（target 自动绑）+ 初始化三态；侧栏入口已删，引导见 README | 浏览器 E2E |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
 | 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
@@ -38,7 +38,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 # token 在 /tmp/sun-dsh-web.log
 ```
 
-- 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）
+- 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）；工作台挂在 Router 会话的「工作台」tab（conversation.view 槽）
 - 改 **宿主 TS**（router-tools/source 等）→ `cd sun-space && pnpm build` → 重启实例
 - 改 **cordis.patch.yml** → 重启实例
 - 每次改完：`pnpm verify`（composition 自检，30 秒）
