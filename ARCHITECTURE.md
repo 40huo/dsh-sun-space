@@ -279,7 +279,7 @@ Watchdog 本身也是 LLM 会话：可以用自然语言询问它"为什么今�
 > | 人格与工具语义（我是谁/有什么工具） | Sun 角色定义、工具边界 | 预设 `persona.prefix`（cordis.patch.yml，随插件分发） | 插件（用户零维护） |
 > | 行为规则（怎么做对） | §5 晨报策略、§6 过滤、§10 预算 | runbook（vault Markdown） | 反思流程修订（人审生效） |
 >
-> target 一律指向**现有 Router 会话**（preset 与人格已挂在会话上，触发即向该会话投一条消息——无需也无法在任务上选 preset）；需要全新会话的场景（轮换冷启动）用 `target.new_once` + `create.agentPreset: 'sun-router'`（schedule API 原生支持，UI 未暴露该字段时经脚本或工作台创建按钮走）。
+> target 一律指向**现有 Router 会话**（preset 与人格已挂在会话上，触发即向该会话投一条消息——无需也无法在任务上选 preset）。API 的 target 有三种：`session`（固定已有会话）/ `new_once`（首跑建会话并沿用）/ `new`（每次新建）——**原生 UI 只暴露后两种**，`session` 绑定走程序化路径（schedule/create 或建后 `schedule/edit` 改 `patch.target`，UI 建的任务可事后改靶）。这一归位不是权宜：target 与 state.json/轮换联动（verify --smoke ⑤ 守护对齐），**target 治理本就该归 sun 侧程序化路径，UI 定位是查看/启停/改时间**。轮换冷启动需要全新会话时用 `new_once` + `create.agentPreset: 'sun-router'`（API 原生支持）。
 
 | 名称 | 触发 | 承载 | 行为 | 状态 |
 |------|------|------|------|------|
