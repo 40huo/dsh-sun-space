@@ -36,7 +36,8 @@
   "scripts": {
     "test": "vitest run",
     "build": "tsdown",
-    "verify": "node verify.mjs"
+    "verify": "node verify.mjs",
+    "sun:schedule": "node scripts/schedule-cli.mjs"
   },
   "files": [
     "lib",
