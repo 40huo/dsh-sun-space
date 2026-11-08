@@ -212,6 +212,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
 - **载体**：DSH 原生 subagent / 动态工作流，以 `sun-worker` 预设创建；当日任务批量并行时由 Router 编排。
 - **工具白名单（`WORK_TOOLS`，同原型思路）**：原型逐字清单为 `read, write, edit, read_image, glob, grep, bash, pwsh, job_output, job_list, job_kill, web_search, web_fetch, skill, todo_write, subagent, list_subagent_models, send_message, interrupt_agent`，并明确排除 `ask_user_question / present / plugin_manager`（面向人的提问/呈现/改配置）——问人只能经 `human_action` 放进汇报、由 Router 转达；工单结束后一切工具调用直接报错。本架构沿用此思路再加命令黑名单（`dws oa task approve|reject`、`rm -rf`、`dws api … POST/DELETE`），命中即拒绝。
 - **隔离**：每个任务一个 Worker + 独立产物目录（原型同款：`worker-<task_id>` 会话与目录），产物统一落 `50-Tasks/artifacts/<task_id>/`，互不污染上下文。
+- **跨目录任务（v0.4.1）**：`sun_route` 支持可选 `cwd`（绝对路径，如代码仓库根）——代码开发等 vault 外任务由此承载。子会话工作区随 cwd，**沙箱可写区自动跟随会话 cwd**（sandbox-policy 的 `workspaceRoot` 仅是"无会话 cwd 时的兜底"，fs 沙箱按每个会话的 mode + cwd 逐次判定）；产物落库仍走 `sun_artifact_write`（vault 绝对路径，与 cwd 无关），vault 读取不受影响。
 - **Worker Prompt 模板**（由 Router 生成，同时落库到任务笔记的 `prompt` 字段）：
 
   ```
@@ -270,6 +271,15 @@ Watchdog 本身也是 LLM 会话：可以用自然语言询问它"为什么今�
 ### 5.3 定时清单（实现定稿：业务定时全部由 DSH 原生"自动化任务"承载，代码零 cron）
 
 > v0.4 实现决策（W45 反思"工作台 v9 精简"同款洞察）：定时是平台能力，插件不再自建 ctx 定时器清单——晨报/日报等以**原生自动化任务**（cron + prompt 指向 Router 会话）创建，UI 可视可启停；`sun-space` 插件代码只保留 Source 的 dws 轮询（TS 层机械 diff，零 LLM）。
+>
+> **定时任务的三层分工（配置一个定时任务时谁需要填什么）**：
+> | 层 | 内容 | 载体 | 维护者 |
+> |---|---|---|---|
+> | 任务指令（每次触发做什么） | "按 runbook §5 执行晨报…"（**薄引用**，几十字） | 原生任务的 prompt 字段 | 用户（唯一要填的） |
+> | 人格与工具语义（我是谁/有什么工具） | Sun 角色定义、工具边界 | 预设 `persona.prefix`（cordis.patch.yml，随插件分发） | 插件（用户零维护） |
+> | 行为规则（怎么做对） | §5 晨报策略、§6 过滤、§10 预算 | runbook（vault Markdown） | 反思流程修订（人审生效） |
+>
+> target 一律指向**现有 Router 会话**（preset 与人格已挂在会话上，触发即向该会话投一条消息——无需也无法在任务上选 preset）；需要全新会话的场景（轮换冷启动）用 `target.new_once` + `create.agentPreset: 'sun-router'`（schedule API 原生支持，UI 未暴露该字段时经脚本或工作台创建按钮走）。
 
 | 名称 | 触发 | 承载 | 行为 | 状态 |
 |------|------|------|------|------|

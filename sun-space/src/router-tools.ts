@@ -221,19 +221,24 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(def(
     'sun_route',
-    '创建子 Worker 会话并分派任务（task_id + prompt）。子会话以 task_id 命名、其会话 id 自动回写任务笔记 session 字段（工作台卡片可直达）。name 冲突时自动改用系统命名。',
+    '创建子 Worker 会话并分派任务（task_id + prompt，可选 cwd）。子会话以 task_id 命名、其会话 id 自动回写任务笔记 session 字段（工作台卡片可直达）。cwd 用于跨目录任务（如代码开发，传仓库根的绝对路径）——沙箱可写区自动跟随会话 cwd；产物落库仍走 sun_artifact_write（vault 绝对路径，不受 cwd 影响）。name 冲突时自动改用系统命名。',
     {
       type: 'object',
       properties: {
         task_id: { type: 'string', description: '任务 ID（T-YYYYMMDD-NN），用于命名子会话与回写 session 字段' },
         prompt: { type: 'string', description: 'Worker 的完整任务指令（含产物要求与 sun_artifact_write 用法）' },
+        cwd: { type: 'string', description: '可选：Worker 的工作目录（绝对路径）。不传则随当前工作区。代码开发等 vault 外任务必传（如 /Users/40huo/Workspace/<repo>）' },
       },
       required: ['task_id', 'prompt'],
     },
-    async (args: { task_id: string; prompt: string }, execUnknown?: unknown) => {
+    async (args: { task_id: string; prompt: string; cwd?: string }, execUnknown?: unknown) => {
       const exec = (execUnknown ?? {}) as { agent?: unknown; signal?: AbortSignal }
       const rawName = String(args.task_id || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+/, 't-').slice(0, 32)
       const name = /^[a-z][a-z0-9-]{0,31}$/.test(rawName) ? rawName : undefined
+      const cwd = args.cwd ? String(args.cwd) : undefined
+      if (cwd && (!cwd.startsWith('/') || cwd.includes('..'))) {
+        return { ok: false, note: 'cwd 必须是绝对路径（不接受相对路径或 .. 穿越语义）' }
+      }
       let activation: { childId?: string; name: string }
       try {
         activation = await ctx.subagents.startActivation({
@@ -241,6 +246,7 @@ export function apply(ctx: Context) {
           label: name || 'sun-worker',
           ...(name ? { name } : {}),
           request: {
+            ...(cwd ? { cwd } : {}),
             prompt: [{ type: 'text', text: String(args.prompt || '') }],
             parent: exec.agent,
             agentPreset: 'sun-worker', // 子会话挂 Worker 预设（组合白名单保证只执行）
