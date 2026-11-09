@@ -65,3 +65,7 @@ pnpm sun:schedule rm <id>
 | [WORKPLAN.md](WORKPLAN.md) | 执行计划与进度快照 |
 | [HANDOFF.md](HANDOFF.md) | 新会话交接：启动命令、机制速查、踩坑记录 |
 | 知识库 vault | `~/Workspace/sun-vault`（Obsidian 打开；runbook / memory / Journal / 50-Tasks 都在这里） |
+
+## License
+
+GPL-3.0-or-later——详见 [LICENSE](LICENSE)。
