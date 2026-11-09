@@ -1,7 +1,6 @@
 {
   "name": "dsh-sun-space",
   "version": "0.2.0",
-  "private": true,
   "type": "module",
   "description": "Sun Space — personal super-agent on DeepSeek Harness (router/worker presets, dws source, vault, panel)",
   "exports": {
