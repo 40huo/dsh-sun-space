@@ -18,10 +18,13 @@ jobs:
         with:
           node-version: 24          # npm >= 11.5.1
           registry-url: https://registry.npmjs.org
-      - run: npm install -g pnpm@latest
-      - working-directory: sun-space
+      - name: 装 pnpm
+        run: npm install -g pnpm@latest
+      - name: 依赖安装与构建
+        working-directory: sun-space
         run: |
           pnpm install --frozen-lockfile
           pnpm build
-      - working-directory: sun-space
+      - name: 发布
+        working-directory: sun-space
         run: npm publish --provenance --access public
