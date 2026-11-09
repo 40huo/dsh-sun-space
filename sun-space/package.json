@@ -48,5 +48,10 @@
     "type": "git",
     "url": "git+https://github.com/40huo/dsh-sun-space.git"
   },
-  "license": "GPL-3.0-or-later"
+  "license": "GPL-3.0-or-later",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
 }
