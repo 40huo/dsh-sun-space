@@ -25,7 +25,7 @@
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
 | 单元测试 | ✅ 40 用例（Watchdog 探活/TTL/resolveRead 分级白名单） | `pnpm test` |
 | composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
-| npm 包分发 | ✅ v0.2.0 **npm 公共包 `dsh-sun-space`**（发布后他机 `dsh plugin --profile web add dsh-sun-space` 即装；bundle.patch.yml 包名引用 + HOME 沙箱；临时 profile 端到端验证过；vault 路径动态发现）：bundle.patch.yml（包名引用 + HOME 沙箱）/ `pnpm pack` / `dsh plugin --profile web add`；临时 profile 端到端验证过（dump-config 含全部 sun-space 条目）；vault 路径动态发现（cwd 推 HOME → state.json vault 字段） | README"在其他电脑安装" |
+| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.2.1，GPL-3.0-or-later）。发版双路线：①CI Trusted Publishing（tag 触发 `.github/workflows/publish.yml`，OIDC 无令牌，provenance 徽章已亮）②本机 bypass 令牌（~/.npmrc）。**踩坑三连**：pnpm12 构建白名单=`pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃、列表语法无效）；Trusted Publisher 需勾 **Allow npm publish**（stage/publish 两段权限，默认只放 stage）；npm 账号用通行密钥时 CLI 无法做高危动作（unpublish 等），需令牌或网页 |（发布后他机 `dsh plugin --profile web add dsh-sun-space` 即装；bundle.patch.yml 包名引用 + HOME 沙箱；临时 profile 端到端验证过；vault 路径动态发现）：bundle.patch.yml（包名引用 + HOME 沙箱）/ `pnpm pack` / `dsh plugin --profile web add`；临时 profile 端到端验证过（dump-config 含全部 sun-space 条目）；vault 路径动态发现（cwd 推 HOME → state.json vault 字段） | README"在其他电脑安装" |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
 ## 三、怎么启动/重启
