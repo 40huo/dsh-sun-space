@@ -20,15 +20,22 @@
 本插件以 npm 包形态分发（构建产物随包，目标机器**无需构建**）：
 
 ```bash
-# 本机打包（每次发版）
-cd sun-space && pnpm pack   # → sun-space-<版本>.tgz
+# 目标机器：直接从 npm 安装（推荐）
+dsh plugin --profile web add dsh-sun-space
+
+# 或指定版本
+dsh plugin --profile web add dsh-sun-space@0.2.0
+
+# 本机打包（发新版时）
+cd sun-space && npm publish   # 包名 dsh-sun-space，需 npm 登录
 
 # 目标机器前置（一次性）
 # ① 安装同版本 dsh 与 pnpm  ② dws 安装并 dws auth login
 # ③ 准备知识库：Obsidian 打开 ~/Workspace/sun-vault（含 90-Meta 骨架；没有也没关系，工作台初始化检查会引导）
 
-# 安装（tarball 传到目标机器后）
-dsh plugin --profile web add ./sun-space-<版本>.tgz
+# 也可用本地 tarball（离线/发版前验证）
+# npm pack 生成 dsh-sun-space-<版本>.tgz 后：
+dsh plugin --profile web add ./dsh-sun-space-<版本>.tgz
 
 # 启动实例——注意：不再需要 --patch 参数，插件已在 profile 里
 dsh --profile web --port 3081 --no-open

@@ -15,7 +15,7 @@
           - !!js process.env.HOME + '/.dws'
 
     - id: sun-space
-      name: 'sun-space'
+      name: 'dsh-sun-space'
 
     # ============ sun-router：交互 · 分派 · 落库 · 反思（无执行工具） ============
     - id: sun-router-preset
@@ -43,7 +43,7 @@
             name: '@deepseek-ai/dsh-time-context'
           # 4 个 sun_* 工具
           - id: sun-router-tools
-            name: 'sun-space/router-tools'
+            name: 'dsh-sun-space/router-tools'
           # 官方人工确认卡（ask_user_question）——架构 sun_ask 的现成实现
           - id: sun-ask
             name: '@deepseek-ai/dsh-tool-ask-user'
@@ -58,7 +58,7 @@
       config:
         id: sun-worker
         name: Sun Worker（Router 自动派发·无需手选）
-        description: 内部组件——由 sun_route 派发时自动挂载；工具白名单与守卫见 sun-space/sessions
+        description: 内部组件——由 sun_route 派发时自动挂载；工具白名单与守卫见 dsh-sun-space 包内 worker-guard/worker-vault
         order: 11
         plugins:
           - id: persona
@@ -107,7 +107,7 @@
               searchTimeoutMs: 60000
           # BLOCKED + noWait 守卫
           - id: sun-worker-guard
-            name: 'sun-space/worker-guard'
+            name: 'dsh-sun-space/worker-guard'
           # 受控产物落库通道（50-Tasks/artifacts/<task_id>/）
           - id: sun-worker-vault
-            name: 'sun-space/worker-vault'
+            name: 'dsh-sun-space/worker-vault'
