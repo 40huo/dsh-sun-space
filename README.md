@@ -15,6 +15,29 @@
 
 在其他会话（普通会话 / Worker 会话）打开「工作台」tab 会显示跳转引导——Sun 的管理面只在当前 Router 会话上；Router 会话轮换后（>30 天或子智能体过多，见 runbook §10），新 Router 会话自动继承工作台。
 
+## 在其他电脑安装（npm 包分发）
+
+本插件以 npm 包形态分发（构建产物随包，目标机器**无需构建**）：
+
+```bash
+# 本机打包（每次发版）
+cd sun-space && pnpm pack   # → sun-space-<版本>.tgz
+
+# 目标机器前置（一次性）
+# ① 安装同版本 dsh 与 pnpm  ② dws 安装并 dws auth login
+# ③ 准备知识库：Obsidian 打开 ~/Workspace/sun-vault（含 90-Meta 骨架；没有也没关系，工作台初始化检查会引导）
+
+# 安装（tarball 传到目标机器后）
+dsh plugin --profile web add ./sun-space-<版本>.tgz
+
+# 启动实例——注意：不再需要 --patch 参数，插件已在 profile 里
+dsh --profile web --port 3081 --no-open
+```
+
+安装后打开 Router 会话 → 「工作台」tab，初始化检查会自动定位知识库（约定布局 `~/Workspace/sun-vault`，或以 `90-Meta/system/state.json` 的 `vault` 字段为准——自定义位置由 Router 写入该字段即可）。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
+
+也可从 GitHub 直装（同内容）：`dsh plugin --profile web add github:40huo/dsh-sun-space#path:sun-space`——`lib/` 不进 git，此路线会在安装时构建，pnpm 拦截 prepare 脚本时按提示在 profile 的 `pnpm-workspace.yaml` 加 `allowBuilds` 后重跑。
+
 ## 命令行（可选）
 
 界面覆盖不到的操作（改靶、批量查看、脚本化）：

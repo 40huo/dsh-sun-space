@@ -25,6 +25,7 @@
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
 | 单元测试 | ✅ 40 用例（Watchdog 探活/TTL/resolveRead 分级白名单） | `pnpm test` |
 | composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
+| npm 包分发 | ✅ v0.2.0 tarball 形态：bundle.patch.yml（包名引用 + HOME 沙箱）/ `pnpm pack` / `dsh plugin --profile web add`；临时 profile 端到端验证过（dump-config 含全部 sun-space 条目）；vault 路径动态发现（cwd 推 HOME → state.json vault 字段） | README"在其他电脑安装" |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
 ## 三、怎么启动/重启

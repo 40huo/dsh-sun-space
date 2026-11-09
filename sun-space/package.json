@@ -1,6 +1,6 @@
 {
   "name": "sun-space",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Sun Space — personal super-agent on DeepSeek Harness (router/worker presets, dws source, vault, panel)",
@@ -13,7 +13,7 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./bundle.patch.yml"
     },
     "client": {
       "platform": "web",
@@ -43,7 +43,10 @@
     "lib",
     "src/client.js",
     "cordis.patch.yml",
-    "skills",
-    "prompts"
-  ]
+    "bundle.patch.yml"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/40huo/dsh-sun-space.git"
+  }
 }

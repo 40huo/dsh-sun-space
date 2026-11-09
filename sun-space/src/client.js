@@ -17,11 +17,12 @@ window.__ModuleLoader__.load({
       let hostCtx = null
 
       const PANEL_ID = 'sun-space'
-      const VAULT = '/Users/40huo/Workspace/sun-vault'
-      // 架构 §4.1 不变量：呈现层不得持有会话 id 常量（Router 会话会周期轮换）。
-      // 当前会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
-      // state.json 写回：① 创建会话后经 session/prompt 引导自登记；② 晨报自检发现不一致自动修正（轮换自愈）。
-      const WB_REV = 'v11' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const VAULT_DIRNAME = 'sun-vault' // vault 目录名约定；绝对路径动态发现，见 resolveVault
+      // 架构 §4.1 不变量：呈现层不得持有会话 id / vault 绝对路径常量（Router 会话会轮换，机器会换）。
+      // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
+      // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
+      // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
+      const WB_REV = 'v12' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -94,8 +95,30 @@ window.__ModuleLoader__.load({
         workspaceFileScopeId: sessionId, path, range: { limit },
       }).then(v => v.text || '')
 
+      // ===== vault 绝对路径发现（跨机器；呈现层不持常量，架构 §4.1 同款不变量）=====
+      // 链：会话 cwd 推 HOME → 约定布局 <HOME>/Workspace/sun-vault 探测 state.json → state.json.vault 字段裁决。
+      // state.json.vault 由 Router 自登记/晨报自检维护（server 端 VAULT 是唯一事实源）。
+      async function resolveVault() {
+        const v = await gw('session/list', {})
+        const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+        const scope = items.find(s => s?.projections?.values?.agentPreset === 'sun-router')?.sessionId ?? items[0]?.sessionId
+        if (!scope) return null
+        const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
+        const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
+        for (const cand of candidates) {
+          try {
+            const raw = await readVaultFile(scope, `${cand}/90-Meta/system/state.json`, 8)
+            const st = JSON.parse(raw)
+            if (st?.vault && st.vault.startsWith('/')) return st.vault // state.json 裁决（可能与约定布局不同盘/路径）
+            D.vaultFoundNoField = cand
+            return cand // 布局命中但 state.json 尚无 vault 字段（旧种子）——先按布局用，晨报自检会补字段
+          } catch { /* 该候选不存在 → 下一个 */ }
+        }
+        return null
+      }
+
       // ===== Router 会话解析（架构 §4.1 不变量：会话会轮换，呈现层只认 vault state.json + 动态发现）=====
-      async function resolveRouterSession() {
+      async function resolveRouterSession(vault) {
         const v = await gw('session/list', {})
         const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
         // 注意：cwd 是"工作区分桶路径"（实例 boot cwd），不是 vault——过滤只看预设（踩坑 5 延伸）
@@ -104,7 +127,7 @@ window.__ModuleLoader__.load({
         // state.json 裁决：指向列表内现存会话者胜（轮换后旧会话仍在列表里，state 是唯一事实源）
         for (const s of candidates) {
           try {
-            const raw = await readVaultFile(s.sessionId, `${VAULT}/90-Meta/system/state.json`, 4)
+            const raw = await readVaultFile(s.sessionId, `${vault}/90-Meta/system/state.json`, 8)
             const st = JSON.parse(raw)
             if (st?.routerSession && candidates.some(c => c.sessionId === st.routerSession)) return st.routerSession
           } catch { /* 无 state.json 或不可读 → 走兜底 */ }
@@ -116,12 +139,16 @@ window.__ModuleLoader__.load({
 
       // ===== 初始化检查（在任何会话的 tab 上都能跑；① 用当前会话作 workspaceFiles scope）=====
       async function runInitChecks(currentSessionId) {
-        const c = { vault: false, presets: false, routerSession: null, notes: [] }
-        // ① 知识库：读 runbook 探测
-        if (currentSessionId) {
-          try { await readVaultFile(currentSessionId, `${VAULT}/90-Meta/runbook.md`, 10); c.vault = true } catch {
-            c.notes.push(`知识库未就绪（当前配置路径 ${VAULT}）：① 用 Obsidian 打开/创建该目录 ② 完成 90-Meta 骨架初始化（可让任意 Router 会话执行"初始化知识库"指令） ③ 重启实例后重新检查`)
+        const c = { vault: false, presets: false, routerSession: null, vaultPath: null, notes: [] }
+        // ① 知识库：vault 路径动态发现 + runbook 探测
+        const vault = await resolveVault()
+        c.vaultPath = vault
+        if (vault && currentSessionId) {
+          try { await readVaultFile(currentSessionId, `${vault}/90-Meta/runbook.md`, 10); c.vault = true } catch {
+            c.notes.push(`知识库未就绪（已定位 ${vault}，缺 90-Meta 骨架）：① 用 Obsidian 打开该目录 ② 可让任意 Router 会话执行"初始化知识库"指令 ③ 重新检查`)
           }
+        } else if (!vault) {
+          c.notes.push(`未找到知识库目录：按约定应在 <用户目录>/Workspace/${VAULT_DIRNAME}（含 90-Meta/system/state.json）；自定义位置需由 Router 把绝对路径写进 state.json 的 vault 字段`)
         } else {
           c.notes.push('知识库检查需要会话作读取通道 → 先创建会话')
         }
@@ -139,7 +166,7 @@ window.__ModuleLoader__.load({
         }
         // ③ Router 会话：动态解析（state.json → 最近活跃）
         try {
-          c.routerSession = await resolveRouterSession()
+          c.routerSession = vault ? await resolveRouterSession(vault) : null
           if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
         } catch {
           c.notes.push('会话列表不可达 → 重试或检查实例')
@@ -153,9 +180,13 @@ window.__ModuleLoader__.load({
       }
 
       // 创建后引导新会话自登记 state.json（workspaceFiles 无写通道，sun_vault_write 是唯一写路径）
-      async function bootstrapRouterSession(sid) {
+      async function bootstrapRouterSession(sid, vault) {
         const text = '初始化自登记：用 sun_vault_write（mode=overwrite）写 90-Meta/system/state.json，内容 ' +
-          JSON.stringify({ routerSession: sid, updatedAt: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }) }) +
+          JSON.stringify({
+            routerSession: sid,
+            vault: vault ?? '（vault 绝对路径，用你环境里 sun 工具实际使用的知识库路径）',
+            updatedAt: new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }),
+          }) +
           '；完成后一句话报告。'
         try {
           await gw('session/prompt', {
@@ -169,16 +200,16 @@ window.__ModuleLoader__.load({
         } catch (e) { D.errors.push('bootstrapRouterSession: ' + String(e)); return false }
       }
 
-      async function loadTasks(routerSession) {
-        if (!routerSession) return []
+      async function loadTasks(routerSession, vault) {
+        if (!routerSession || !vault) return []
         const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
         let journalText = ''
-        try { journalText = await readVaultFile(routerSession, `${VAULT}/40-Journal/${today}.md`, 200) } catch {}
+        try { journalText = await readVaultFile(routerSession, `${vault}/40-Journal/${today}.md`, 200) } catch {}
         const ids = [...new Set([...journalText.matchAll(/\[\[(T-\d{8}-\d{2})\]\]/g)].map(m => m[1]))]
         const tasks = []
         for (const id of ids.slice(0, 20)) {
           try {
-            const fm = parseFrontmatter(await readVaultFile(routerSession, `${VAULT}/50-Tasks/${id}.md`, 24))
+            const fm = parseFrontmatter(await readVaultFile(routerSession, `${vault}/50-Tasks/${id}.md`, 24))
             if (fm.id) tasks.push({
               id: fm.id, status: fm.status || 'proposed', source: fm.source || '',
               priority: fm.priority || 'medium', journal: fm.journal || '', session: fm.session || '',
@@ -226,7 +257,7 @@ window.__ModuleLoader__.load({
 
       function InitPanel({ checks, currentSessionId, onRetry }) {
         const rows = [
-          { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${VAULT}` },
+          { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${checks.vaultPath}` },
           { ok: checks.presets, title: '② 依赖插件（智能体协作 / 子智能体）', desc: checks.notes.find(n => n.includes('预设') || n.includes('插件')) || '已就绪', action: checks.presets ? null : 'plugins' },
           { ok: !!checks.routerSession, title: '③ Router 会话（sun-router 预设）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : (checks.notes.find(n => n.includes('Router 会话')) || '不存在'), action: checks.presets && !checks.routerSession ? 'create-router' : null },
         ]
@@ -244,7 +275,7 @@ window.__ModuleLoader__.load({
                 const v = await createRouterSession()
                 const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
                 if (sid) {
-                  await bootstrapRouterSession(sid) // 自登记 state.json（失败不阻断——下次检查由最近活跃兜底）
+                  await bootstrapRouterSession(sid, checks.vaultPath) // 自登记 state.json（含 vault 字段；失败不阻断——下次检查由最近活跃兜底）
                   try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
                   onRetry() // 新会话的 tab 即完整工作台（state.json 已指向它）
                 }
@@ -338,16 +369,17 @@ window.__ModuleLoader__.load({
         }, [sessionId])
         React.useEffect(() => { runChecks() }, [runChecks])
         const routerSession = init.checks?.routerSession ?? null
+        const vault = init.checks?.vaultPath ?? null
         const isRouterView = !!(routerSession && sessionId && routerSession === sessionId)
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
         const reload = React.useCallback(() => {
           setState(s => ({ ...s, loading: true, error: null }))
-          loadTasks(routerSession)
+          loadTasks(routerSession, vault)
             .then(tasks => setState({ loading: false, tasks, error: null }))
             .catch(e => setState({ loading: false, tasks: [], error: String(e.message || e) }))
-        }, [routerSession])
+        }, [routerSession, vault])
         React.useEffect(() => { reload() }, [reload])
 
         const by = s => state.tasks.filter(t => t.status === s)
