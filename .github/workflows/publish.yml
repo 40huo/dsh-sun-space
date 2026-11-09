@@ -1,0 +1,33 @@
+# sun-space npm 发布工作流——Trusted Publishing（OIDC 无令牌发布）。
+# 前置：npmjs.com → 包 dsh-sun-space → Settings → Trusted Publisher
+#   登记为 GitHub Actions / 仓库 40huo/dsh-sun-space / 工作流 publish.yml
+# 发版：cd sun-space && pnpm build && npm version patch && git push --tags
+name: Publish dsh-sun-space
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}   # 手动触发备用
+
+permissions:
+  id-token: write   # OIDC 短时签名——Trusted Publishing 的全部凭证
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest   # 官方要求：公共 runner（自托管不受信任）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24          # npm >= 11.5.1 才支持 OIDC trusted publishing
+          registry-url: https://registry.npmjs.org
+      - name: Install pnpm
+        run: npm install -g pnpm@latest
+      - name: Install dependencies & build（lib 不进 git，CI 现场构建）
+        working-directory: sun-space
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - name: Publish（OIDC 令牌即凭证，无任何存储的 npm token）
+        working-directory: sun-space
+        run: npm publish --provenance --access public

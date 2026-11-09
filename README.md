@@ -29,6 +29,11 @@ dsh plugin --profile web add dsh-sun-space@0.2.0
 # 本机打包（发新版时）
 cd sun-space && npm publish   # 包名 dsh-sun-space，需 npm 登录
 
+# CI 发版（Trusted Publishing，无令牌）：本仓库已配 .github/workflows/publish.yml，
+# 在 npm 包 Settings → Trusted Publisher 登记 40huo/dsh-sun-space / publish.yml 后，
+# 打 tag 即自动构建发布：
+cd sun-space && npm version patch && git push --tags
+
 # 目标机器前置（一次性）
 # ① 安装同版本 dsh 与 pnpm  ② dws 安装并 dws auth login
 # ③ 准备知识库：Obsidian 打开 ~/Workspace/sun-vault（含 90-Meta 骨架；没有也没关系，工作台初始化检查会引导）
