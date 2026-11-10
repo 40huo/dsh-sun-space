@@ -6,7 +6,7 @@
  * target 自动绑当前会话）；非 Router 会话 → 跳转引导卡；无 Router 会话 → 初始化面板。
  */
 window.__ModuleLoader__.load({
-  id: 'sun-space/client',
+  id: 'dsh-sun-space/client',
   factory(require) {
     const D = { phase: 'factory-entered', errors: [], currentSessionId: null }
     try {
@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
       // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v12' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v13' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -255,6 +255,19 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // 创建 Router 会话 → 自登记 state.json → 跳转 → 重检（InitPanel 与 OnboardPanel 共用）
+      async function createAndBootstrap(checks, onRetry) {
+        try {
+          const v = await createRouterSession()
+          const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
+          if (sid) {
+            await bootstrapRouterSession(sid, checks.vaultPath) // 自登记 state.json（含 vault 字段；失败不阻断——下次检查由最近活跃兜底）
+            try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
+            onRetry() // 新会话的 tab 即完整工作台（state.json 已指向它）
+          }
+        } catch (e) { D.errors.push(String(e)) }
+      }
+
       function InitPanel({ checks, currentSessionId, onRetry }) {
         const rows = [
           { ok: checks.vault, title: '① 知识库（vault）', desc: checks.notes.find(n => n.includes('知识库')) || `已就绪：${checks.vaultPath}` },
@@ -270,21 +283,19 @@ window.__ModuleLoader__.load({
               h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, r.desc),
             ]),
             r.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
-            r.action === 'create-router' ? h('button', { key: 'a', onClick: async () => {
-              try {
-                const v = await createRouterSession()
-                const sid = typeof v === 'string' ? v : (v?.sessionId ?? v)
-                if (sid) {
-                  await bootstrapRouterSession(sid, checks.vaultPath) // 自登记 state.json（含 vault 字段；失败不阻断——下次检查由最近活跃兜底）
-                  try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
-                  onRetry() // 新会话的 tab 即完整工作台（state.json 已指向它）
-                }
-              } catch (e) { D.errors.push(String(e)) }
-            }, style: btnStyle }, '创建 Router 会话') : null,
+            r.action === 'create-router' ? h('button', { key: 'a', onClick: () => createAndBootstrap(checks, onRetry), style: btnStyle }, '创建 Router 会话') : null,
           ])),
           h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),
         ])
       }
+
+      // 四条生产预设：一键预填表单（新机器启用的最后一公里）
+      const SCHEDULE_TEMPLATES = [
+        { label: '晨报 08:45', title: 'Sun 晨间简报', cron: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记（sun_vault_meta 流转状态）→ sun_notify(ask) 推送摘要请我确认。触发队列里 sys-onboarding-guide 类待办按 runbook §6 过滤。自检兜底：若 90-Meta/system/state.json 的 routerSession/vault 字段与本会话环境不符 → sun_vault_write(overwrite) 修正。' },
+        { label: '日报 18:30', title: 'Sun 日报', cron: '30 18 * * 1-5', prompt: '【定时 · 日报】按 runbook §7 执行日报：sun_read(tasks/journal/note full) 汇总当日任务 → 日报追加到 40-Journal/当日.md（今日完成/未完成与原因/明日建议，保持 status=draft）→ sun_notify(ask) 请求审核。' },
+        { label: 'Watchdog 14/21 点', title: 'Sun Watchdog 巡检', cron: '0 14,21 * * 1-5', prompt: '【定时 · Watchdog 巡检】按 runbook §3 分级巡检，quiet by default——一切正常则不发任何通知。检查：①running 超 2h → urgent+重派建议 ②need-confirm 超 2h → urgent 重推 ③工作日缺晨报/日报小节 → 按 §5/§7 补跑 ④核对 90-Meta/system/state.json 的 routerSession/vault 字段，不符则修正。' },
+        { label: '周复盘 周五 17:00', title: 'Sun 周复盘', cron: '0 17 * * 5', prompt: '【定时 · 周复盘】生成 90-Meta/reflections/当周.md（frontmatter: type reflection/status draft/week/本地时间戳）：§本周概览含派发预算执行 §做得好/不好各≤3 §runbook 修订建议 diff §下周关注含轮换触发线检视 → 周报以「## 周复盘」追加 Journal（status=draft）→ sun_notify(ask) 请求审核，人审后 diff 生效。' },
+      ]
 
       // ===== 定时任务区：列表 + 新建表单（target 自动绑当前 Router 会话，补 UI 无 session 选项的缺口）=====
       function ScheduleSection({ routerSession }) {
@@ -348,6 +359,11 @@ window.__ModuleLoader__.load({
           // 新建表单
           h('div', { key: 'form', style: { border: '1px dashed rgba(128,128,128,0.4)', borderRadius: 8, padding: '10px 12px', marginTop: 8 } }, [
             h('div', { key: 'ft', style: { fontSize: 12, fontWeight: 600, marginBottom: 6 } }, '＋ 新增定时任务（cron，工作日建议 1-5）'),
+            h('div', { key: 'tpl', style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 } }, [
+              h('span', { key: 'lbl', style: { fontSize: 11, opacity: 0.6 } }, '快速填入：'),
+              ...SCHEDULE_TEMPLATES.map(t => h('button', { key: t.label, onClick: () => setForm(f => ({ ...f, title: t.title, cron: t.cron, prompt: t.prompt, msg: null })), style: btnStyle }, t.label)),
+            ]),
+            active.length === 0 ? h('p', { key: 'emptyhint', style: { fontSize: 11, opacity: 0.55, margin: '0 0 6px' } }, '还没有生效的定时任务——选一个模板填入，点「创建」即绑定本会话。') : null,
             h('input', { key: 'title', placeholder: '标题，如：Sun 生活提醒', value: form.title, onChange: e => setForm(f => ({ ...f, title: e.target.value })), style: { ...inputStyle, marginBottom: 6 } }),
             h('input', { key: 'cron', placeholder: 'cron：分 时 日 月 周（五段），时区固定 Asia/Shanghai', value: form.cron, onChange: e => setForm(f => ({ ...f, cron: e.target.value })), style: { ...inputStyle, marginBottom: 6, fontFamily: 'monospace' } }),
             h('textarea', { key: 'prompt', placeholder: '任务指令（薄引用写法：按 runbook §N 执行……）', value: form.prompt, onChange: e => setForm(f => ({ ...f, prompt: e.target.value })), rows: 3, style: { ...inputStyle, marginBottom: 6, resize: 'vertical' } }),
@@ -359,10 +375,36 @@ window.__ModuleLoader__.load({
         ])
       }
 
+      // 新用户三步启用引导（主理鱼同款编号步骤卡；替代旧的一锅炖检查面板）
+      function OnboardPanel({ checks, currentSessionId, onRetry }) {
+        const steps = [
+          { n: 1, ok: checks.presets, title: '确认依赖插件', desc: checks.presets ? '智能体协作 / 子智能体插件已启用' : '打开插件面板，启用 sun-space / 智能体协作相关插件后重启实例', action: checks.presets ? null : 'plugins' },
+          { n: 2, ok: !!checks.routerSession, title: '创建 Router 会话', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : '一键创建 sun-router 预设会话并自动登记（工作台与定时任务都挂在这上面）', action: checks.presets && !checks.routerSession ? 'create-router' : null },
+          { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : `用 Obsidian 打开（或创建）~/Workspace/sun-vault 并放好 90-Meta 骨架；自定义位置让 Router 把绝对路径写进 state.json 的 vault 字段`, action: null },
+        ]
+        const allOk = steps.every(x => x.ok)
+        return h('div', null, [
+          h('h2', { key: 'h', style: { margin: '0 0 4px', fontSize: 18 } }, '三步启用 Sun'),
+          h('p', { key: 'sub', style: { margin: '0 0 14px', fontSize: 12, opacity: 0.6 } }, '工作台与定时任务都挂在 Router 会话上——三步完成后，本页即变为日常工作台。'),
+          ...steps.map(st => h('div', { key: st.n, style: { ...cardStyle(st.ok ? '#57b26a' : 'rgba(128,128,128,0.35)'), alignItems: 'flex-start', marginBottom: 10, padding: '10px 14px' } }, [
+            h('span', { key: 'n', style: { width: 22, height: 22, borderRadius: 11, flexShrink: 0, marginTop: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, background: st.ok ? '#57b26a' : 'rgba(128,128,128,0.25)', color: st.ok ? '#fff' : 'inherit' } }, st.ok ? '✓' : String(st.n)),
+            h('div', { key: 'b', style: { flex: 1 } }, [
+              h('div', { key: 't', style: { fontWeight: 600, fontSize: 13 } }, st.title),
+              h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6, marginTop: 2 } }, st.desc),
+            ]),
+            st.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
+            st.action === 'create-router' ? h('button', { key: 'a', onClick: () => createAndBootstrap(checks, onRetry), style: btnStyle }, '创建 Router 会话') : null,
+          ])),
+          allOk ? h('p', { key: 'done', style: { color: '#57b26a', fontSize: 13 } }, '✓ 全部就绪——到「定时任务」用模板创建晨报等四条生产任务，即可开始使用。') : null,
+          h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),
+        ])
+      }
+
       function Workbench(props) {
         // conversation.view 的 inject(sessionId) 捕获当前会话；props 兜底
         const sessionId = props?.sessionId ?? D.currentSessionId ?? null
         const [init, setInit] = React.useState({ checking: true, checks: null })
+        const [tab, setTab] = React.useState('overview')
         const runChecks = React.useCallback(() => {
           setInit({ checking: true, checks: null })
           runInitChecks(sessionId).then(checks => setInit({ checking: false, checks }))
@@ -371,6 +413,7 @@ window.__ModuleLoader__.load({
         const routerSession = init.checks?.routerSession ?? null
         const vault = init.checks?.vaultPath ?? null
         const isRouterView = !!(routerSession && sessionId && routerSession === sessionId)
+        const allReady = !!(init.checks && init.checks.vault && init.checks.presets && routerSession)
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
         const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
@@ -426,6 +469,17 @@ window.__ModuleLoader__.load({
           ])
         }
 
+        // 未就绪 → 三步启用引导；检查中 → 占位
+        if (init.checking) {
+          return h('div', { style: { padding: '20px 30px', maxWidth: 960 }, 'data-wb-rev': WB_REV }, [
+            h('p', { key: 'w', style: { opacity: 0.6, fontSize: 13 } }, '初始化检查中…'),
+          ])
+        }
+        if (init.checks && !allReady) {
+          return h('div', { style: { padding: '20px 30px', maxWidth: 960 }, 'data-wb-rev': WB_REV }, [
+            h(SunErrorBoundary, { key: 'eb' }, h(OnboardPanel, { checks: init.checks, currentSessionId: sessionId, onRetry: runChecks })),
+          ])
+        }
         return h('div', { style: { padding: '20px 30px', maxWidth: 960 }, 'data-wb-rev': WB_REV }, [
           h(SunErrorBoundary, { key: 'eb' }, [
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
@@ -434,12 +488,10 @@ window.__ModuleLoader__.load({
             h('button', { key: 'r', onClick: () => { reload(); runChecks() }, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
           // 初始化面板：三项检查任一未就绪时出现（含无 Router 会话的场景）
-          init.checking ? h('p', { key: 'w', style: { opacity: 0.6, fontSize: 13 } }, '初始化检查中…') : null,
-          !init.checking && init.checks && !(init.checks.vault && init.checks.presets && routerSession)
-            ? h('div', { key: 'init', style: { marginBottom: 16 } }, h(InitPanel, { key: 'ip', checks: init.checks, currentSessionId: sessionId, onRetry: runChecks }))
-            : null,
-          !isRouterView && h('p', { key: 'wait', style: { opacity: 0.6, fontSize: 13 } }, '初始化完成后，这里会展示派活树与定时任务。'),
-          isRouterView && h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
+          h('div', { key: 'tabs', style: { display: 'flex', gap: 18, marginBottom: 14, borderBottom: '1px solid rgba(128,128,128,0.2)' } }, [
+            ['overview', '总览'], ['schedules', '定时任务'], ['setup', '设置'],
+          ].map(([id, label]) => h('button', { key: id, onClick: () => setTab(id), style: { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14, padding: '6px 2px', color: 'inherit', opacity: tab === id ? 1 : 0.55, borderBottom: tab === id ? '2px solid currentColor' : '2px solid transparent' } }, label))),
+          h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
               h('span', { key: 'l', style: { fontSize: 13 } }, `${label} ${n}`),
@@ -447,7 +499,7 @@ window.__ModuleLoader__.load({
           state.error && h('p', { key: 'err', style: { color: '#e8634d', fontSize: 13 } }, '加载失败：' + state.error),
 
           // ===== 派活树（仅 Router 视图）=====
-          isRouterView && h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => { try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: {
+          tab === 'overview' && h('div', { key: 'root', title: '点击打开 Router 会话', onClick: () => { try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: {
             display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer',
             border: anyRunning ? '1px solid rgba(87,178,106,0.55)' : '1px solid rgba(128,128,128,0.3)',
             background: anyRunning ? 'rgba(87,178,106,0.10)' : 'transparent',
@@ -463,8 +515,8 @@ window.__ModuleLoader__.load({
               anyRunning ? '干活中' : '待命',
             ]),
           ]),
-          isRouterView && tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
-          isRouterView && tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
+          tab === 'overview' && tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
+          tab === 'overview' && tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
             h('div', { key: 'elbow', style: { position: 'absolute', left: 13, top: -8, width: 8, height: 30, borderLeft: '2px solid rgba(128,128,128,0.35)', borderBottom: '2px solid rgba(128,128,128,0.35)', borderTop: '2px solid rgba(128,128,128,0.35)', borderTopLeftRadius: 6 } }),
             h('div', { key: 'card', title: '点击打开对应会话', onClick: () => openTaskSession(t), style: {
               cursor: 'pointer', ...cardStyle(t.status === 'need-confirm' ? STATUS_META['need-confirm'].color : undefined),
@@ -480,18 +532,19 @@ window.__ModuleLoader__.load({
               t.status === 'need-confirm' ? h('span', { key: 'wait', style: { fontSize: 12, color: STATUS_META['need-confirm'].color, marginLeft: 'auto' } }, '等你决策 →') : null,
             ]),
           ])),
-          isRouterView && tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
+          tab === 'overview' && tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
 
           // ===== 定时任务（列表 + 新建表单，仅 Router 视图）=====
-          isRouterView && routerSession ? h(ScheduleSection, { key: 'schedsec', routerSession }) : null,
+          tab === 'schedules' && routerSession ? h(ScheduleSection, { key: 'schedsec', routerSession }) : null,
 
           // ===== Journal 入口卡（仅 Router 视图）=====
-          isRouterView && h('div', { key: 'journal', title: 'Journal 在 Obsidian 中查看与编辑', style: {
+          tab === 'overview' && h('div', { key: 'journal', title: 'Journal 在 Obsidian 中查看与编辑', style: {
             border: '1px solid rgba(128,128,128,0.25)', borderRadius: 10, padding: '12px 16px', marginTop: 18,
           } }, [
             h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
             h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
           ]),
+          tab === 'setup' && h('div', { key: 'setup' }, h(InitPanel, { checks: init.checks, currentSessionId: sessionId, onRetry: runChecks })),
           ]),
         ])
       }
