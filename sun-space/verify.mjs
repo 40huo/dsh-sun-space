@@ -50,6 +50,9 @@ if (composed) {
   readFileSync(join(ROOT, 'src/router-tools.ts'), 'utf8').includes("agentPreset: 'sun-worker'")
     ? ok('sun_route 子会话挂 sun-worker 预设（代码级，spec.request）')
     : fail('sun_route 未挂 sun-worker 预设')
+  readFileSync(join(ROOT, 'lib/index.mjs'), 'utf8').includes('worker-watchdog')
+    ? ok('worker-watchdog 已构建进入口（实时盯 worker 卡死）')
+    : fail('worker-watchdog 未构建进 lib/index.mjs')
   composed.includes('additionalWritableRoots') ? ok('沙箱白名单（dws 锁文件）在位') : fail('沙箱白名单缺失')
   composed.includes('tool-ask-user') ? ok('ask_user_question 决策卡已挂载') : fail('ask_user_question 未挂载')
 } else {

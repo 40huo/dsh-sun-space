@@ -5,6 +5,10 @@ on:
     tags: ["v*"]
   workflow_dispatch: {}
 
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
 permissions:
   id-token: write   # OIDC 短时签名，唯一凭证
   contents: read
@@ -13,18 +17,42 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # 带 id-token: write 的工作流能换取发布权，actions 必须钉死 commit（浮动 tag 是投毒路径）
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24          # npm >= 11.5.1
           registry-url: https://registry.npmjs.org
       - name: Install pnpm
         run: npm install -g pnpm@latest
+      - name: Verify tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="${REF_NAME#v}"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag $REF_NAME != package.json $VERSION — refusing to publish"
+            exit 1
+          fi
       - name: Install and build
         working-directory: sun-space
         run: |
           pnpm install --frozen-lockfile
           pnpm build
+      - name: Skip if already published
+        id: check
+        run: |
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::warning::$NAME@$VERSION already on npm — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish
+        if: steps.check.outputs.skip != 'true'
         working-directory: sun-space
         run: npm publish --provenance --access public

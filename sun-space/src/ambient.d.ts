@@ -22,7 +22,13 @@ declare module '@deepseek-ai/cordis' {
     }
     subagents: {
       startActivation(spec: Record<string, unknown>): Promise<{ childId?: string; name: string; result?: unknown; dispose?: () => void }>
+      /** 停掉一个子代理；authority 用 { kind:'ancestor', agent: 父agent } 形状（宿主做血缘校验） */
+      interrupt(childId: string, authority?: Record<string, unknown>): unknown
     }
+    /** 事件监听（cordis 冒泡：后代 scope 发出的事件可被祖先 scope 收到）。tools/post-execute 是瀑布，须 return next() */
+    on(event: string, handler: (...args: unknown[]) => unknown): void
+    /** 调用期取宿主服务（可能取不到——调用方决定退路） */
+    get<T = unknown>(service: string): T | undefined
     timer: unknown
     /** TimerService 混入方法（vendor/timer 运行时提供，随 fiber 清理） */
     timeout(callback: () => void, delay: number): () => void
