@@ -1,7 +1,7 @@
 # HANDOFF —— 新会话交接文档
 
 > 新开 AI 会话（或人接手）时，把本文件全文丢给对方即可接续工作。
-> 最后更新：2026-11-08 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
+> 最后更新：2026-11-10 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
 
 ## 一、这个项目是什么
 
@@ -18,14 +18,14 @@
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
 | 插件（sun-space） | ✅ 双预设 + 5 工具 + Source 轮询 + 初始化检查面板 | lib/*.mjs（tsdown 构建） |
-| 工作台 | ✅ **Router 会话上的 tab**（v13：内部三 tab 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建四条生产预设一键预填）| 浏览器 E2E 截图 |（conversation.view 槽，v0.4.2）——派活树 + 定时任务列表/新建表单（target 自动绑）+ 初始化三态；侧栏入口已删，引导见 README | 浏览器 E2E |
+| 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，v15：内部分段控件三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建一键预填四条生产预设；派活树 + 直达子会话 + target 漂移检测）| 浏览器 E2E 截图 |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
 | 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
 | 单元测试 | ✅ 40 用例（Watchdog 探活/TTL/resolveRead 分级白名单） | `pnpm test` |
 | composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
-| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.2.1，GPL-3.0-or-later）。发版双路线：①CI Trusted Publishing（tag 触发 `.github/workflows/publish.yml`，OIDC 无令牌，provenance 徽章已亮）②本机 bypass 令牌（~/.npmrc）。**踩坑三连**：pnpm12 构建白名单=`pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃、列表语法无效）；Trusted Publisher 需勾 **Allow npm publish**（stage/publish 两段权限，默认只放 stage）；npm 账号用通行密钥时 CLI 无法做高危动作（unpublish 等），需令牌或网页 |（发布后他机 `dsh plugin --profile web add dsh-sun-space` 即装；bundle.patch.yml 包名引用 + HOME 沙箱；临时 profile 端到端验证过；vault 路径动态发现）：bundle.patch.yml（包名引用 + HOME 沙箱）/ `pnpm pack` / `dsh plugin --profile web add`；临时 profile 端到端验证过（dump-config 含全部 sun-space 条目）；vault 路径动态发现（cwd 推 HOME → state.json vault 字段） | README"在其他电脑安装" |
+| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.2.3，GPL-3.0-or-later）。发版 = commit 后 `npm version patch` + push tag，CI Trusted Publishing 自动发布（OIDC 无令牌 + provenance + 三道闸：tag↔版本硬校验 / 已发布跳过 / actions 钉 SHA）。他机安装：`dsh plugin --profile web add dsh-sun-space`。踩坑：pnpm12 构建白名单= `pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃）；Trusted Publisher 须勾 **Allow npm publish**（stage 默认放行、publish 要显式授权）；通行密钥账号 CLI 无法做 unpublish 等高危动作（需令牌或网页）；校验步骤必须带 `working-directory: sun-space`（仓库根无 package.json） | README「在其他电脑安装」 |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
 ## 三、怎么启动/重启

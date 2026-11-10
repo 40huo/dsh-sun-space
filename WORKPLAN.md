@@ -8,7 +8,7 @@
 
 ## 0. 里程碑总览
 
-> **进度快照（2026-11-08 晚）**：P0 ✅ · P1 主体 ✅ · P2 部分 ✅（工作台 v9 + 直达子会话 + 拍板 + ask 卡全链路）· verify.mjs 自检 ✅（29 用例）。B 批清偿完成：sun_vault_meta 时区显示修复（schemas.md 契约同步）、ARCHITECTURE v0.4 对齐现实（§5.3 原生 schedule 定时 / §8.6 工作台定稿 / §4.1 轮换与 sun_route 薄包装）。下一阶段计划落档本文 §8。IM 入站延后（待机器人应用）。详见反思 2026-W45。
+> **进度快照（2026-11-10）**：P0/P1 ✅（生产四定时自然运行中）· P2 ✅ 清零 · **P3 部分启动**。近期增量交付：①Worker 实时看门狗（dsh-multitask 借鉴，E2E 真实触发验证）②工作台 v15「孙学空间」（会话 tab 内分段控件三分栏 + 三步启用引导 + 定时模板速建）③npm 分发闭环 `dsh-sun-space@0.2.3`（Trusted Publishing CI 无令牌发版 + publish 三道闸）④schedule-cli。观察期任务：连续 3 日无人值守验收（周一~周三）、周五周复盘首跑。详见本文 §8 与 HANDOFF。
 
 ```mermaid
 gantt
@@ -182,6 +182,15 @@ gantt
 | B-2 | ARCHITECTURE.md 对齐现实 | ✅ 升 v0.4：§5.3 定时清单改"DSH 原生 schedule 承载 + Source 只轮询"、§8.6 五 Tab → 工作台 v9 单页定稿、§4.1 补 sun_route 宿主薄包装与周期轮换、§0 图/§2.3/§8.8/§11/附录 B3/B4 同步 |
 | B-3 | 计划落档 + 待办重排 | ✅ 本节 + HANDOFF §五 |
 
+### 增量交付（2026-11-09 ~ 11-10，观察期内并行完成）
+
+| 项 | 内容 | 来源 |
+|----|------|------|
+| Worker 实时看门狗 | `worker-watchdog.ts` 全局 scope：tools/post-execute 刷新计时，无活动 >15min → trigger 落盘 + urgent 通知 + interrupt 唤醒 Router；E2E 真实触发验证（纯生成 Worker 被截断、Router 转述"被中途停止"） | dsh-multitask subagent-watchdog 借鉴 |
+| 工作台 v15「孙学空间」 | 会话 tab 内分段控件三分栏（总览/定时任务/设置）+ 新用户三步启用引导卡 + 定时任务模板速建（四条生产预设一键预填）；修复包改名未同步 client 注册 id 的静默失效暗雷 | 主理鱼布局借鉴 + 用户驱动迭代 |
+| schedule-cli | `pnpm sun:schedule`（list/add/retarget/rm），target 自动绑 state.json 解析的当前会话 | UI 无 session 选项的补位（后由工作台表单接管，CLI 转为脚本化备选） |
+| npm 分发闭环 | 0.2.0→0.2.3：bundle.patch.yml（包名引用+HOME 沙箱）→ npm publish → Trusted Publishing CI（publish 三道闸）→ 0.2.3 中文描述上架 | 用户需求"npm 包分发" |
+
 ### 第三批 · P3 启动（11-13 起，按价值排序）
 
 | ID | 任务 | 要点 | 验收 |
@@ -201,3 +210,5 @@ gantt
 | 生活领域分域（finance/health/learning） | backlog，巡检稳定运行一周后评估 |
 | **复审 P2 backlog（第三轮复审遗留）** | ① 块式 YAML 经 sun_vault_meta 重写丢字段（解析器只认扁平+行内数组）② 沙箱 fail-open 默认 → fail-closed + workspaceRoot 钉死 ③ worker-guard 字面量可绕（正则加固）④ 看板 Journal 反链扩近 7 天 ⑤ client/server 两套 frontmatter 解析器合一 |
 | 需求/缺陷数据源（P3-2） | **待用户输入**：公司工单系统是哪家（钉钉项目/云效/Jira/自建）→ 决定接入路线 |
+| npm bypass 令牌撤销 | CI 发版已通，本机 ~/.npmrc 令牌冗余——npmjs.com → Access Tokens 可撤销（撤销后本机直发需重新 login） |
+| npm 0.0.0-stage 占位版本清理 | 需 support 工单（通行密钥账号 CLI 无法 unpublish）；无害，latest 指向 0.2.3 |
