@@ -39,7 +39,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 # token 在 /tmp/sun-dsh-web.log
 ```
 
-- 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）；工作台挂在 Router 会话的「工作台」tab（conversation.view 槽）
+- 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）；工作台挂在 Router 会话的「孙学空间」tab（conversation.view 槽）
 - 改 **宿主 TS**（router-tools/source 等）→ `cd sun-space && pnpm build` → 重启实例
 - 改 **cordis.patch.yml** → 重启实例
 - 每次改完：`pnpm verify`（composition 自检，30 秒）

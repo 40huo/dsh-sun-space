@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
       // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v14' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v15' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -379,13 +379,13 @@ window.__ModuleLoader__.load({
       function OnboardPanel({ checks, currentSessionId, onRetry }) {
         const steps = [
           { n: 1, ok: checks.presets, title: '确认依赖插件', desc: checks.presets ? '智能体协作 / 子智能体插件已启用' : '打开插件面板，启用 sun-space / 智能体协作相关插件后重启实例', action: checks.presets ? null : 'plugins' },
-          { n: 2, ok: !!checks.routerSession, title: '创建 Router 会话', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : '一键创建 sun-router 预设会话并自动登记（工作台与定时任务都挂在这上面）', action: checks.presets && !checks.routerSession ? 'create-router' : null },
+          { n: 2, ok: !!checks.routerSession, title: '创建 Router 会话', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : '一键创建 sun-router 预设会话并自动登记（孙学空间与定时任务都挂在这上面）', action: checks.presets && !checks.routerSession ? 'create-router' : null },
           { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : `用 Obsidian 打开（或创建）~/Workspace/sun-vault 并放好 90-Meta 骨架；自定义位置让 Router 把绝对路径写进 state.json 的 vault 字段`, action: null },
         ]
         const allOk = steps.every(x => x.ok)
         return h('div', null, [
           h('h2', { key: 'h', style: { margin: '0 0 4px', fontSize: 18 } }, '三步启用 Sun'),
-          h('p', { key: 'sub', style: { margin: '0 0 14px', fontSize: 12, opacity: 0.6 } }, '工作台与定时任务都挂在 Router 会话上——三步完成后，本页即变为日常工作台。'),
+          h('p', { key: 'sub', style: { margin: '0 0 14px', fontSize: 12, opacity: 0.6 } }, '孙学空间与定时任务都挂在 Router 会话上——三步完成后，本页即变为日常入口。'),
           ...steps.map(st => h('div', { key: st.n, style: { ...cardStyle(st.ok ? '#57b26a' : 'rgba(128,128,128,0.35)'), alignItems: 'flex-start', marginBottom: 10, padding: '10px 14px' } }, [
             h('span', { key: 'n', style: { width: 22, height: 22, borderRadius: 11, flexShrink: 0, marginTop: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, background: st.ok ? '#57b26a' : 'rgba(128,128,128,0.25)', color: st.ok ? '#fff' : 'inherit' } }, st.ok ? '✓' : String(st.n)),
             h('div', { key: 'b', style: { flex: 1 } }, [
@@ -461,7 +461,7 @@ window.__ModuleLoader__.load({
                 h(SunIcon, { key: 'i', size: 20 }),
                 h('div', { key: 'b', style: { flex: 1, fontSize: 13, lineHeight: 1.7 } }, [
                   h('div', { key: 't', style: { fontWeight: 600 } }, '本会话不是当前 Router 会话'),
-                  h('div', { key: 'd', style: { opacity: 0.7, fontSize: 12 } }, `Sun 工作台在 Router 会话上（当前：${routerSession.slice(0, 28)}…）。派活树、定时任务与初始化检查都在那边。`),
+                  h('div', { key: 'd', style: { opacity: 0.7, fontSize: 12 } }, `孙学空间在 Router 会话上（当前：${routerSession.slice(0, 28)}…）。派活树、定时任务与初始化检查都在那边。`),
                 ]),
                 h('button', { key: 'go', onClick: () => { try { hostCtx.uiWorkspace.openSession(routerSession) } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开 Router 会话'),
               ]),
@@ -484,7 +484,7 @@ window.__ModuleLoader__.load({
           h(SunErrorBoundary, { key: 'eb' }, [
           h('div', { key: 'head', style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } }, [
             h(SunIcon, { key: 'i', size: 22 }),
-            h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, 'Sun 工作台'),
+            h('h1', { key: 't', style: { margin: 0, fontSize: 20 } }, '孙学空间'),
             h('button', { key: 'r', onClick: () => { reload(); runChecks() }, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
           // 初始化面板：三项检查任一未就绪时出现（含无 Router 会话的场景）
@@ -564,7 +564,7 @@ window.__ModuleLoader__.load({
                 name: 'conversation.view',
                 id: PANEL_ID,
                 order: 40,
-                label: () => '工作台',
+                label: () => '孙学空间',
                 inject: (sessionId) => { D.currentSessionId = sessionId; return {} },
               }, Workbench)
             })
