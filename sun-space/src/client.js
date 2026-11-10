@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
       // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v13' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v14' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -488,9 +488,9 @@ window.__ModuleLoader__.load({
             h('button', { key: 'r', onClick: () => { reload(); runChecks() }, style: { marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(128,128,128,0.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' } }, state.loading ? '刷新中…' : '刷新'),
           ]),
           // 初始化面板：三项检查任一未就绪时出现（含无 Router 会话的场景）
-          h('div', { key: 'tabs', style: { display: 'flex', gap: 18, marginBottom: 14, borderBottom: '1px solid rgba(128,128,128,0.2)' } }, [
+          h('div', { key: 'tabs', style: { display: 'flex', gap: 3, marginBottom: 16, background: 'rgba(128,128,128,0.12)', borderRadius: 8, padding: 3 } }, [
             ['overview', '总览'], ['schedules', '定时任务'], ['setup', '设置'],
-          ].map(([id, label]) => h('button', { key: id, onClick: () => setTab(id), style: { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14, padding: '6px 2px', color: 'inherit', opacity: tab === id ? 1 : 0.55, borderBottom: tab === id ? '2px solid currentColor' : '2px solid transparent' } }, label))),
+          ].map(([id, label]) => h('button', { key: id, onClick: () => setTab(id), style: { flex: 1, border: 'none', cursor: 'pointer', fontSize: 13, padding: '6px 0', borderRadius: 6, color: 'inherit', background: tab === id ? 'rgba(128,128,128,0.28)' : 'transparent', opacity: tab === id ? 1 : 0.6, transition: 'background 0.15s' } }, label))),
           h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
