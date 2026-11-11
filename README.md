@@ -54,7 +54,7 @@ dsh plugin --profile web update dsh-sun-space     # 或 remove 后重新 add
 
 **dws 沙箱说明**：Worker 会话的 dws 命令若报 `open ~/.dws/.data.lock: operation not permitted`，Worker 会按预设指示自动 `export DWS_CONFIG_DIR=$(mktemp -d)` 重试自愈（凭证存 Keychain 不受影响），无需人工干预。本机开发态（`--patch`）保留了沙箱白名单覆写，不受影响。
 
-安装后打开 Router 会话 → 「孙学空间」tab，初始化检查会自动定位知识库（约定布局 `~/Workspace/sun-vault`，或以 `90-Meta/system/state.json` 的 `vault` 字段为准——自定义位置由 Router 写入该字段即可）。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
+安装后打开 Router 会话 → 「孙学空间」tab，初始化检查会自动定位知识库。vault 路径解析优先级：① 环境变量 `SUN_VAULT` ② `~/.dsh/state/sun-space/config.json`（手写 `{ "vault": "/你的/绝对路径" }`，持久化）③ 默认约定 `~/Workspace/sun-vault`。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
 
 也可从 GitHub 直装（同内容）：`dsh plugin --profile web add github:40huo/dsh-sun-space#path:sun-space`——`lib/` 不进 git，此路线会在安装时构建，pnpm 拦截 prepare 脚本时按提示在 profile 的 `pnpm-workspace.yaml` 加 `allowBuilds` 后重跑。
 
