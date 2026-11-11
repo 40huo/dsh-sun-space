@@ -4,7 +4,7 @@
  * 本入口负责 Source（dws 轮询 + 定时 Trigger）。
  */
 import type { Context } from '@deepseek-ai/cordis'
-import { publishVaultForClient } from './vault-path'
+import { publishVaultState } from './vault-path'
 import * as source from './source'
 import * as workerWatchdog from './worker-watchdog'
 
@@ -14,7 +14,7 @@ export const name = 'sun-space'
 export const inject = ['timer', 'tools']
 
 export function apply(ctx: Context) {
-  publishVaultForClient() // vault 路径落盘实例目录，供浏览器端孙学空间发现
+  publishVaultState() // vault 解析结果落盘 ~/.dsh/state/sun-space/，供浏览器端孙学空间发现
   ctx.plugin(source)
   ctx.plugin(workerWatchdog) // 全局 scope：盯 sun-worker 子代理卡死（事件冒泡到这里）
 }

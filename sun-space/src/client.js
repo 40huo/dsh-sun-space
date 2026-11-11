@@ -103,14 +103,16 @@ window.__ModuleLoader__.load({
         const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
         const scope = items.find(s => s?.projections?.values?.agentPreset === 'sun-router')?.sessionId ?? items[0]?.sessionId
         if (!scope) return null
-        // ① 插件落盘的运行配置（实例 cwd 的 sun-space.json；相对路径以会话工作区根解析，即实例 cwd）
-        try {
-          const raw = await readVaultFile(scope, 'sun-space.json', 4)
-          const cfg = JSON.parse(raw)
-          if (cfg?.vault && cfg.vault.startsWith('/')) return cfg.vault
-        } catch { /* 无发现文件 → 走约定探测 */ }
-        // ② 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
+        // ① 插件状态文件（~/.dsh/state/sun-space/state.json；HOME 从会话 cwd 推导，绝对路径读取）
         const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
+        for (const home of homes) {
+          try {
+            const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/state.json`, 8)
+            const st = JSON.parse(raw)
+            if (st?.vault && st.vault.startsWith('/')) return st.vault
+          } catch { /* 该 HOME 无状态文件 → 下一个 */ }
+        }
+        // ② 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
         const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
         for (const cand of candidates) {
           try {
