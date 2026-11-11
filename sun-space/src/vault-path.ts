@@ -22,6 +22,30 @@ export const DEFAULT_VAULT_DIRNAME = 'sun-vault'
 /** 插件自有状态目录（~/.dsh/state/sun-space/），沿用官方 state/<插件名> 约定。 */
 export const STATE_DIR = join(homedir(), '.dsh', 'state', 'sun-space')
 
+/** 纯函数：给定 env 与 config 内容时的解析结果（测试与 vaultPath 共用）。 */
+export function computeVaultPath(envValue: string | undefined, configJson: string | undefined, home = homedir()): string {
+  if (envValue && envValue.trim() !== '') return envValue
+  try {
+    const cfg = JSON.parse(configJson ?? '')
+    if (typeof cfg?.vault === 'string' && cfg.vault.startsWith('/')) return cfg.vault
+  } catch { /* 无/坏配置 → 默认约定 */ }
+  return join(home, 'Workspace', DEFAULT_VAULT_DIRNAME)
+}
+
+let cached: { at: number; key: string; value: string } = { at: 0, key: '', value: '' }
+
+/** 运行期解析：每次调用重读 config.json（60s 微缓存防抖），"以当前目录初始化"写入后即时生效。 */
+export function vaultPath(now = Date.now()): string {
+  let configJson: string | undefined
+  try {
+    configJson = readFileSync(join(STATE_DIR, 'config.json'), 'utf8')
+  } catch { /* 无配置文件 */ }
+  if (now - cached.at < 60_000 && cached.key === (configJson ?? '')) return cached.value
+  const value = computeVaultPath(process.env.SUN_VAULT, configJson)
+  cached = { at: now, key: configJson ?? '', value }
+  return value
+}
+
 /** 解析 vault 绝对路径（① env ② 状态目录 config.json ③ 默认约定）。stateDir 参数化以便测试隔离。 */
 export function resolveVaultPath(home = homedir(), stateDir = STATE_DIR): string {
   if (process.env.SUN_VAULT && process.env.SUN_VAULT.trim() !== '') return process.env.SUN_VAULT
@@ -32,7 +56,8 @@ export function resolveVaultPath(home = homedir(), stateDir = STATE_DIR): string
   return join(home, 'Workspace', DEFAULT_VAULT_DIRNAME)
 }
 
-export const VAULT = resolveVaultPath()
+/** 启动期快照（兼容保留：运行期动态解析请用 vaultPath()）。 */
+export const VAULT = vaultPath()
 
 /** 把解析结果写回状态目录的 state.json（apply 时调用，尽力而为），供客户端发现。 */
 export function publishVaultState(now = new Date()): void {
@@ -40,7 +65,7 @@ export function publishVaultState(now = new Date()): void {
     mkdirSync(STATE_DIR, { recursive: true })
     writeFileSync(
       join(STATE_DIR, 'state.json'),
-      JSON.stringify({ vault: VAULT, updatedAt: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` }, null, 2),
+      JSON.stringify({ vault: vaultPath(now.getTime()), updatedAt: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` }, null, 2),
       'utf8',
     )
   } catch { /* 写不进不阻断启动 */ }

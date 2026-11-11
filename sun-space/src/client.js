@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
       // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v15' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v16' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -264,6 +264,17 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // 知识库初始化指令（下发到当前会话执行——标准预设有完整文件工具；
+      // 第 6 步写 ~/.dsh 超出工作区，会在对话中弹一次审批卡，由用户批准）
+      const VAULT_INIT_PROMPT = `【孙学空间知识库初始化】以当前工作目录为知识库根（vault）：
+1) 创建目录：90-Meta/system、40-Journal、50-Tasks/artifacts、00-Inbox、60-Archive
+2) 写 90-Meta/schemas.md：frontmatter 契约最小集——通用字段 type/id/status/created/updated；task 的 status 枚举（proposed|running|need-confirm|done|blocked|dropped）；写入纪律（Journal 由 Router 独占；日期一律本地时间 YYYY-MM-DDTHH:mm 不带时区后缀；结论必注出处）
+3) 写 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：IM ≤100 字结论先行 + §3 打扰分级：info 攒批/ask 立即/urgent 加 DING）
+4) 写 90-Meta/memory.md：初始版（# 关于用户，待填充）
+5) 创建目录 90-Meta/system
+6) 把知识库绝对路径登记到 ~/.dsh/state/sun-space/config.json：内容 {"vault": "<当前目录绝对路径>"}（目录不存在则创建）
+7) 完成后列出生成的文件清单。`
+
       // 创建 Router 会话 → 自登记 state.json → 跳转 → 重检（InitPanel 与 OnboardPanel 共用）
       async function createAndBootstrap(checks, onRetry) {
         try {
@@ -386,10 +397,11 @@ window.__ModuleLoader__.load({
 
       // 新用户三步启用引导（主理鱼同款编号步骤卡；替代旧的一锅炖检查面板）
       function OnboardPanel({ checks, currentSessionId, onRetry }) {
+        const [initBusy, setInitBusy] = React.useState(false)
         const steps = [
           { n: 1, ok: checks.presets, title: '确认依赖插件', desc: checks.presets ? '智能体协作 / 子智能体插件已启用' : '打开插件面板，启用 sun-space / 智能体协作相关插件后重启实例', action: checks.presets ? null : 'plugins' },
           { n: 2, ok: !!checks.routerSession, title: '创建 Router 会话', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : '一键创建 sun-router 预设会话并自动登记（孙学空间与定时任务都挂在这上面）', action: checks.presets && !checks.routerSession ? 'create-router' : null },
-          { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : `用 Obsidian 打开（或创建）~/Workspace/sun-vault 并放好 90-Meta 骨架；自定义位置让 Router 把绝对路径写进 state.json 的 vault 字段`, action: null },
+          { n: 3, ok: checks.vault, title: '知识库（以当前目录初始化）', desc: checks.vault ? `已就绪：${checks.vaultPath}` : (currentSessionId ? '以当前目录为 vault 根创建 90-Meta 骨架，并把路径登记到 ~/.dsh/state/sun-space/config.json——会在对话中请求一次该写入的批准' : '先打开一个会话再来执行此步'), action: checks.vault || !currentSessionId || initBusy ? null : 'init-vault' },
         ]
         const allOk = steps.every(x => x.ok)
         return h('div', null, [
@@ -403,6 +415,20 @@ window.__ModuleLoader__.load({
             ]),
             st.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
             st.action === 'create-router' ? h('button', { key: 'a', onClick: () => createAndBootstrap(checks, onRetry), style: btnStyle }, '创建 Router 会话') : null,
+            st.action === 'init-vault' ? h('button', { key: 'a', onClick: async () => {
+              setInitBusy(true)
+              try {
+                await gw('session/prompt', {
+                  requestId: 'sun-init-' + Date.now(),
+                  sessionId: currentSessionId,
+                  mode: 'queue',
+                  content: [{ type: 'text', text: VAULT_INIT_PROMPT }],
+                  clientTimeZone: 'Asia/Shanghai',
+                })
+                checks.notes.push('初始化任务已下发到当前会话——请在对话中批准 ~/.dsh 写入并等待完成，然后点「↻ 重新检查」')
+              } catch (e) { D.errors.push('init-vault: ' + String(e)) }
+              setInitBusy(false)
+            }, style: btnStyle }, '以当前目录初始化知识库') : null,
           ])),
           allOk ? h('p', { key: 'done', style: { color: '#57b26a', fontSize: 13 } }, '✓ 全部就绪——到「定时任务」用模板创建晨报等四条生产任务，即可开始使用。') : null,
           h('button', { key: 'retry', onClick: onRetry, style: { ...btnStyle, marginTop: 10 } }, '↻ 重新检查'),

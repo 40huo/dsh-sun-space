@@ -14,15 +14,14 @@ import { currentUserId, notifySelf, snapshot, diff, type DwsSnapshot } from './d
 
 export const inject = ['timer']
 
-import { VAULT } from './vault-path'
-export { VAULT }
+import { vaultPath } from './vault-path'
 
 /** 轮询周期（毫秒）：纯程序层，可调密。 */
 const POLL_MS = 30 * 60_000
 
-const TRIGGER_DIR = `${VAULT}/90-Meta/triggers`
+const triggerDir = () => `${vaultPath()}/90-Meta/triggers`
 
-const SNAPSHOT_FILE = `${VAULT}/90-Meta/mock-data/last-snapshot.json`
+const snapshotFile = () => `${vaultPath()}/90-Meta/mock-data/last-snapshot.json`
 
 /** trigger 文件 TTL：超过即视为已消费/过期，轮询成功路径顺带清理。 */
 export const TRIGGER_TTL_MS = 7 * 24 * 60 * 60_000
@@ -77,7 +76,7 @@ function schedulePolling(ctx: Context) {
       const prev = await readPrev()
       if (!prev) {
         // 首跑建基线：全量快照静默落盘、不入触发队列——否则装满历史当"新增"会洪泛通知（复审 R1 遗留项）
-        await writeFile(SNAPSHOT_FILE, JSON.stringify(snap), 'utf8')
+        await writeFile(snapshotFile(), JSON.stringify(snap), 'utf8')
         return
       }
       const fresh = diff(prev, snap)
@@ -89,9 +88,9 @@ function schedulePolling(ctx: Context) {
         if (fresh.newApprovals.length) parts.push(`新审批 ${fresh.newApprovals.length} 件`)
         await notifySelf(uid, `[Sun·info] ${parts.join('、')}，已入触发队列（${new Date().toLocaleTimeString('zh-CN')}）`)
       }
-      await writeFile(SNAPSHOT_FILE, JSON.stringify(snap), 'utf8')
+      await writeFile(snapshotFile(), JSON.stringify(snap), 'utf8')
       health.fails = 0
-      await pruneTriggers(TRIGGER_DIR).catch(() => {})
+      await pruneTriggers(triggerDir()).catch(() => {})
     } catch (e) {
       ctx.logger?.warn?.(`[sun-space] poll failed: ${String((e as Error).message).slice(0, 150)}`)
       health.fails++
@@ -117,14 +116,14 @@ function schedulePolling(ctx: Context) {
 
 async function readPrev(): Promise<DwsSnapshot | null> {
   try {
-    return JSON.parse(await readFile(SNAPSHOT_FILE, 'utf8')) as DwsSnapshot
+    return JSON.parse(await readFile(snapshotFile(), 'utf8')) as DwsSnapshot
   } catch {
     return null
   }
 }
 
 async function writeTrigger(label: string, payload: unknown) {
-  await mkdir(TRIGGER_DIR, { recursive: true })
+  await mkdir(triggerDir(), { recursive: true })
   const ts = new Date().toISOString().replace(/[:.]/g, '-')
-  await writeFile(join(TRIGGER_DIR, `${ts}-${label}.json`), JSON.stringify({ label, payload }, null, 2), 'utf8')
+  await writeFile(join(triggerDir(), `${ts}-${label}.json`), JSON.stringify({ label, payload }, null, 2), 'utf8')
 }

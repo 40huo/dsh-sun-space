@@ -11,8 +11,7 @@ import { resolveSafe, VaultPathError } from './vault'
 
 export const inject = ['tools']
 
-import { VAULT } from './vault-path'
-export { VAULT }
+import { vaultPath } from './vault-path'
 
 const TASK_ID = /^T-\d{8}-\d{2}$/
 
@@ -53,7 +52,7 @@ export function apply(ctx: Context) {
       }
       try {
         const rel = artifactPath(String(taskId), String(filename))
-        const abs = resolveSafe(VAULT, rel)
+        const abs = resolveSafe(vaultPath(), rel)
         await mkdir(join(abs, '..'), { recursive: true })
         await writeFile(abs, String(content ?? ''), 'utf8')
         return { ok: true, path: rel }

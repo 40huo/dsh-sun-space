@@ -41,9 +41,8 @@ export const name = 'worker-watchdog'
 
 export const inject = ['timer']
 
-import { VAULT } from './vault-path'
-export { VAULT }
-const TRIGGER_DIR = `${VAULT}/90-Meta/triggers`
+import { vaultPath } from './vault-path'
+const triggerDir = () => `${vaultPath()}/90-Meta/triggers`
 
 /** 默认停滞阈值 15 分钟：长思考/长命令完成后即重置计时，真卡死撑不到这么久。 */
 export const DEFAULT_STALL_MS = 15 * 60_000
@@ -121,10 +120,10 @@ export function apply(ctx: Context) {
     const idleMin = Math.round((Date.now() - entry.at) / 60_000)
     log('warn', `stalled: child=${entry.id} idle=${idleMin}min — interrupting & notifying`)
     try {
-      await mkdir(TRIGGER_DIR, { recursive: true })
+      await mkdir(triggerDir(), { recursive: true })
       const ts = new Date().toISOString().replace(/[:.]/g, '-')
       await writeFile(
-        join(TRIGGER_DIR, `${ts}-watchdog-stall.json`),
+        join(triggerDir(), `${ts}-watchdog-stall.json`),
         JSON.stringify({ label: 'watchdog-stall', payload: { childId: entry.id, idleMinutes: idleMin } }, null, 2),
         'utf8',
       )
