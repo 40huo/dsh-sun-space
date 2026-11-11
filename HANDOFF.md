@@ -37,7 +37,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
   --patch /Users/40huo/Workspace/dsh-sun-space/sun-space/cordis.patch.yml \
   --port 3081 --no-open
 # token 在 /tmp/sun-dsh-web.log
-# 本机 vault 路径经实例启动目录的 sun-space.config.json 映射（{vault: 绝对路径}，内容不入库）；不配置则用默认 ~/Workspace/sun-vault
+# 本机 vault 路径经~/.dsh/state/sun-space/config.json 映射（{vault: 绝对路径}，内容不入库）；不配置则用默认 ~/Workspace/sun-vault
 ```
 
 - 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）；工作台挂在 Router 会话的「孙学空间」tab（conversation.view 槽）
