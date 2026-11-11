@@ -1,4 +1,7 @@
 # sun-space bundle 补丁（npm 包分发形态，package.json dsh.bundle.patch 指向本文件）。
+# ⚠️ 升级/卸载须知：本层覆写了基础组件 dsh-sandbox-policy 的行——宿主运行期间该
+# 组件永远在运行，插件管理器的安装/升级/卸载会被 bundle-in-use 守卫拒绝。
+# 正确操作：完全退出 DSH → CLI `dsh plugin --profile web add/remove dsh-sun-space` → 再启动。
 # 与 cordis.patch.yml（本机开发态，绝对路径直挂仓库文件）内容等价，差异两处：
 #   ① 插件与工具模块用包名引用（安装后由 loader 从 profile node_modules 解析）；
 #   ② 沙箱白名单 HOME 化（跨机器）。

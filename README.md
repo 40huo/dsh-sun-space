@@ -46,6 +46,13 @@ dsh plugin --profile web add ./dsh-sun-space-<版本>.tgz
 dsh --profile web --port 3081 --no-open
 ```
 
+**升级与卸载**：本插件覆写了基础沙箱组件（dws 白名单所需），DSH 运行期间插件页的升级/卸载会被 `bundle-in-use` 守卫拒绝——请**完全退出 DSH 后用 CLI 操作，再启动**：
+
+```bash
+dsh plugin --profile web add dsh-sun-space@<新版本>     # 升级
+dsh plugin --profile web remove dsh-sun-space           # 卸载
+```
+
 安装后打开 Router 会话 → 「孙学空间」tab，初始化检查会自动定位知识库（约定布局 `~/Workspace/sun-vault`，或以 `90-Meta/system/state.json` 的 `vault` 字段为准——自定义位置由 Router 写入该字段即可）。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
 
 也可从 GitHub 直装（同内容）：`dsh plugin --profile web add github:40huo/dsh-sun-space#path:sun-space`——`lib/` 不进 git，此路线会在安装时构建，pnpm 拦截 prepare 脚本时按提示在 profile 的 `pnpm-workspace.yaml` 加 `allowBuilds` 后重跑。

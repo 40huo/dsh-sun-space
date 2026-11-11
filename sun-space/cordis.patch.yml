@@ -3,7 +3,9 @@
 # 双预设：sun-router（只分派）/ sun-worker（只执行）。工具白名单由组合本身保证
 # （Spike A 结论），guard 由 worker-guard 在组合内挂载。
 - insert:
-    # dws CLI 需写自身数据锁（~/.dws/.data.lock）——沙箱白名单放行（E2E R4 发现；
+    # 注意：本文件含 dsh-sandbox-policy 覆写行——分发形态下该覆写会使运行中的宿主拒绝本包的
+# 安装/升级/卸载（bundle-in-use），须退出后 CLI 操作（README 有说明）。
+# dws CLI 需写自身数据锁（~/.dws/.data.lock）——沙箱白名单放行（E2E R4 发现；
     # Router 临场自愈方案为 DWS_CONFIG_DIR 临时目录，此为正式修复，二选一即可）。
     # 覆盖行必须带 name 且 config 需完整复刻 base（否则行被禁用，连锁 15 服务失效）
     - id: sandbox-policy
