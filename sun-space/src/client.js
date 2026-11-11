@@ -103,14 +103,17 @@ window.__ModuleLoader__.load({
         const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
         const scope = items.find(s => s?.projections?.values?.agentPreset === 'sun-router')?.sessionId ?? items[0]?.sessionId
         if (!scope) return null
-        // ① 插件状态文件（~/.dsh/state/sun-space/state.json；HOME 从会话 cwd 推导，绝对路径读取）
+        // ① 插件状态目录（HOME 从会话 cwd 推导，绝对路径读取）：
+        //    config.json 优先（运行期事实源——引导初始化/用户手写即时生效），state.json 兜底（启动期快照）
         const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
         for (const home of homes) {
-          try {
-            const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/state.json`, 8)
-            const st = JSON.parse(raw)
-            if (st?.vault && st.vault.startsWith('/')) return st.vault
-          } catch { /* 该 HOME 无状态文件 → 下一个 */ }
+          for (const file of ['config.json', 'state.json']) {
+            try {
+              const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/${file}`, 8)
+              const st = JSON.parse(raw)
+              if (st?.vault && st.vault.startsWith('/')) return st.vault
+            } catch { /* 该文件不存在 → 下一个 */ }
+          }
         }
         // ② 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
         const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
