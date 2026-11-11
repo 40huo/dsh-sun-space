@@ -2,7 +2,7 @@
  * DSH 宿主服务的最小类型垫片。
  * 运行时由宿主组合真实提供（packages/core/tools 等）；npm 版 @deepseek-ai/cordis
  * 不含这些模块增补，故此处声明运行期已验证的 API 形状。
- * P1-1 验证记录：tools.register/guard、timer、logger 均已在 3081 实例上运行过。
+ * P1-1 验证记录：tools.register/guard、timer、logger 均已在实例上运行验证过。
  */
 declare module '@deepseek-ai/cordis' {
   interface ToolDefinitionLike {

@@ -227,7 +227,7 @@ export function apply(ctx: Context) {
       properties: {
         task_id: { type: 'string', description: '任务 ID（T-YYYYMMDD-NN），用于命名子会话与回写 session 字段' },
         prompt: { type: 'string', description: 'Worker 的完整任务指令（含产物要求与 sun_artifact_write 用法）' },
-        cwd: { type: 'string', description: '可选：Worker 的工作目录（绝对路径）。不传则随当前工作区。代码开发等 vault 外任务必传（如 /Users/40huo/Workspace/<repo>）' },
+        cwd: { type: 'string', description: '可选：Worker 的工作目录（绝对路径）。不传则随当前工作区。代码开发等 vault 外任务必传（如 ~/Workspace/<repo>）' },
       },
       required: ['task_id', 'prompt'],
     },
