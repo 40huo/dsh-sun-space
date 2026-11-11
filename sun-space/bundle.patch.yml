@@ -1,7 +1,7 @@
 # sun-space bundle 补丁（npm 包分发形态，package.json dsh.bundle.patch 指向本文件）。
-# ⚠️ 升级/卸载须知：本层覆写了基础组件 dsh-sandbox-policy 的行——宿主运行期间该
-# 组件永远在运行，插件管理器的安装/升级/卸载会被 bundle-in-use 守卫拒绝。
-# 正确操作：完全退出 DSH → CLI `dsh plugin --profile web add/remove dsh-sun-space` → 再启动。
+# 本层不覆写任何基础组件行——DSH 运行期间安装/升级/卸载均可用（无 bundle-in-use 拦截）。
+# dws 锁文件（~/.dws/.data.lock）的沙箱 EPERM 由 Worker persona 的 DWS_CONFIG_DIR 自愈指示兜底
+# （凭证在 Keychain，换配置目录不影响认证；0.2.4 起生效，体验优先于全局白名单）。
 # 与 cordis.patch.yml（本机开发态，绝对路径直挂仓库文件）内容等价，差异两处：
 #   ① 插件与工具模块用包名引用（安装后由 loader 从 profile node_modules 解析）；
 #   ② 沙箱白名单 HOME 化（跨机器）。
@@ -9,14 +9,6 @@
 - insert:
     # dws CLI 需写自身数据锁（~/.dws/.data.lock）——沙箱白名单放行（E2E R4 发现）。
     # HOME 化以支持跨机器分发；覆盖行必须带 name 且 config 需完整复刻 base（否则行被禁用）。
-    - id: sandbox-policy
-      name: '@deepseek-ai/dsh-sandbox-policy'
-      config:
-        mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
-        workspaceRoot: !!js process.cwd()
-        additionalWritableRoots:
-          - !!js process.env.HOME + '/.dws'
-
     - id: sun-space
       name: 'dsh-sun-space'
 
@@ -70,6 +62,7 @@
               prefix: >-
                 You are a Sun Worker executor. 专注完成单一任务：读、检索、执行、验证。
                 你没有面向人的工具——结论只写给 Router。查询自由；写操作先 --dry-run；
+                dws 命令若报 open ~/.dws/.data.lock EPERM：export DWS_CONFIG_DIR=$(mktemp -d) 后重试一次（沙箱无白名单环境的标准自愈，凭证在 Keychain 不受影响）；
                 禁止 dws oa task approve|reject、rm -rf、dws api POST/DELETE。
                 任务产物一律用 sun_artifact_write 落库（task_id 由 Router 给出），
                 不要用相对路径写文件。

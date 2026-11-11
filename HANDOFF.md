@@ -80,7 +80,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 3. **网关参数形状**：各 remote 方法 args 形状不一（agentPresets/list 空对象、schedule/* 带 request、session/list 带 _request）——以实际探测为准，勿照搬。
 4. **npx 构建产物与 repo 源码有漂移**：以运行时 lib 为契约源（startActivation 的 spec.request 包装差异）。
 5. **会话按工作区分桶**：实例 boot cwd 决定会话存储桶——"会话列表空"先查桶再查数据。
-6. **bundle 覆写基础行 = 运行中宿主拒绝一切管理操作**：bundle.patch.yml 覆写 dsh-sandbox-policy（dws 白名单需要），而 plugin-manager 的 bundle-in-use 守卫按 id+name 把 bundle 贡献行与运行中条目比对——基础组件永远在运行 → 安装/升级/卸载全拒（卸载时 disable 后基础配置复现同一行，仍命中）。解法：完全退出 DSH → CLI add/remove → 重启（README「升级与卸载」已写）。
+6. **bundle 覆写基础行 = 运行中宿主拒绝一切管理操作**（已解决）：曾为 dws 白名单覆写 dsh-sandbox-policy 行，bundle-in-use 守卫（按 id+name 比对运行中条目）因此拒绝安装/升级/卸载。0.2.4 起 bundle.patch.yml 移除覆写（运行期管理畅通），白名单仅保留在本机开发态 cordis.patch.yml；他机 Worker 的 dws EPERM 由 persona 指示的 DWS_CONFIG_DIR 自愈兜底（实测凭证在 Keychain，换配置目录不丢认证）。教训：bundle 覆写基础组件行 = 与常驻组件绑定 id+name，管理操作永久撞 bundle-in-use——分发 patch 尽量只贡献自有行。
 10. **包名改名必须同步 client 注册 id**：client.js 的 `__ModuleLoader__.load({ id: 'dsh-sun-space/client' })` 经 stripClientSuffix 对齐 package.json name 后注册 factory——id 与包名不一致时报 "loaded without registering"，客户端静默全挂（Failed to load plugins），服务端无任何报错。
 10. **schedule/create 契约**（typert 严格校验）：`request` 内是 `{title, prompt, timing, target}`——timing 为**嵌套** `{kind:'cron', cron:{expression, time_zone}}` 或 `{kind:'after', after_seconds}`；字段 snake_case 在 timing 内。schedule/list 返回的是读模型（平铺 expression/timeZone），勿照搬回写。
 10. **脚本侧网关验收方法**：launch-token 交换（GET /?token=… 存 cookie）→ RPC 信封 `{type:'client-request', rpcId, method, payload:{args}}` 且 method 同时在 URL 路径 `/api/<method>`；`agentPresets/list` 空 args、`schedule/*` 包 `request`、`session/page` 包 `request.address={kind:'session',sessionId}`（读会话历史页，验收利器）；cookie jar 里旧实例的 `dsh-auth-<随机后缀>` 会残留，换实例重启后要清 jar。
