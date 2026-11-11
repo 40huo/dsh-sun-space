@@ -41,7 +41,8 @@ export const name = 'worker-watchdog'
 
 export const inject = ['timer']
 
-export const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
+import { VAULT } from './vault-path'
+export { VAULT }
 const TRIGGER_DIR = `${VAULT}/90-Meta/triggers`
 
 /** 默认停滞阈值 15 分钟：长思考/长命令完成后即重置计时，真卡死撑不到这么久。 */

@@ -14,7 +14,8 @@ import { currentUserId, notifySelf, snapshot, diff, type DwsSnapshot } from './d
 
 export const inject = ['timer']
 
-export const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
+import { VAULT } from './vault-path'
+export { VAULT }
 
 /** 轮询周期（毫秒）：纯程序层，可调密。 */
 const POLL_MS = 30 * 60_000

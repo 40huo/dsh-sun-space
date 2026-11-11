@@ -12,7 +12,8 @@ import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
 
-export const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
+import { VAULT } from './vault-path'
+export { VAULT }
 
 const text = (s: string) => [{ type: 'text', text: s }]
 const ok = (value: unknown) => ({

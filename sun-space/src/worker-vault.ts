@@ -11,7 +11,8 @@ import { resolveSafe, VaultPathError } from './vault'
 
 export const inject = ['tools']
 
-export const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
+import { VAULT } from './vault-path'
+export { VAULT }
 
 const TASK_ID = /^T-\d{8}-\d{2}$/
 

@@ -103,6 +103,13 @@ window.__ModuleLoader__.load({
         const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
         const scope = items.find(s => s?.projections?.values?.agentPreset === 'sun-router')?.sessionId ?? items[0]?.sessionId
         if (!scope) return null
+        // ① 插件落盘的运行配置（实例 cwd 的 sun-space.json；相对路径以会话工作区根解析，即实例 cwd）
+        try {
+          const raw = await readVaultFile(scope, 'sun-space.json', 4)
+          const cfg = JSON.parse(raw)
+          if (cfg?.vault && cfg.vault.startsWith('/')) return cfg.vault
+        } catch { /* 无发现文件 → 走约定探测 */ }
+        // ② 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
         const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
         const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
         for (const cand of candidates) {
