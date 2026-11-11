@@ -1,7 +1,7 @@
 # HANDOFF —— 新会话交接文档
 
 > 新开 AI 会话（或人接手）时，把本文件全文丢给对方即可接续工作。
-> 最后更新：2026-11-10 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
+> 最后更新：2026-11-11 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
 
 ## 一、这个项目是什么
 
@@ -37,6 +37,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
   --patch /Users/40huo/Workspace/dsh-sun-space/sun-space/cordis.patch.yml \
   --port 3081 --no-open
 # token 在 /tmp/sun-dsh-web.log
+# 本机 vault 路径经实例启动目录的 sun-space.config.json 映射（{vault: 绝对路径}，内容不入库）；不配置则用默认 ~/Workspace/sun-vault
 ```
 
 - 改 **client.js**（浏览器半）→ 只需页面刷新（无需重启实例）；工作台挂在 Router 会话的「孙学空间」tab（conversation.view 槽）
