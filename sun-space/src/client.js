@@ -130,9 +130,11 @@ window.__ModuleLoader__.load({
       }
 
       // ===== Router 会话解析（架构 §4.1 不变量：会话会轮换，呈现层只认 vault state.json + 动态发现）=====
-      async function resolveRouterSession(vault) {
-        const v = await gw('session/list', {})
-        const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+      async function resolveRouterSession(vault, items) {
+        if (!items) {
+          const v = await gw('session/list', {})
+          items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+        }
         // 注意：cwd 是"工作区分桶路径"（实例 boot cwd），不是 vault——过滤只看预设（踩坑 5 延伸）
         const candidates = items.filter(s => s?.projections?.values?.agentPreset === 'sun-router')
         if (!candidates.length) return null
@@ -176,12 +178,14 @@ window.__ModuleLoader__.load({
           c.presets = false
           c.notes.push('预设服务不可达 → 确认 Harness 实例在线、插件已启用')
         }
-        // ③ Router 会话：动态解析（state.json → 最近活跃）；顺带记录当前会话 cwd（一键初始化用它作 vault 根/工作区）
+        // ③ Router 会话：动态解析 + 首个 sun-router 会话创建时自动登记其 cwd 为 vault 根
+        //   （"当前目录作为 vault"语义的插件层落点；env/config 更高优先级不受影响）
         try {
           const sl = await gw('session/list', {})
           const items = Array.isArray(sl?.items) ? sl.items : Object.values(sl?.items ?? {})
           c.currentCwd = (items.find(s => s.sessionId === currentSessionId) ?? {}).cwd ?? null
-          c.routerSession = vault ? await resolveRouterSession(vault) : null
+          // vault 根登记由宿主插件在 sun-router 会话创建时自动完成（index.ts agent/created 钩子）
+          c.routerSession = vault ? await resolveRouterSession(vault, items) : null
           if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
         } catch {
           c.notes.push('会话列表不可达 → 重试或检查实例')
@@ -265,13 +269,12 @@ window.__ModuleLoader__.load({
             sessionId: sid,
             mode: 'queue',
             content: [{ type: 'text', text: `【孙学空间初始化】你是新环境的 Sun Router（你的会话 id：${sid}）。你的工作目录即知识库根（vault）。按顺序完成：
-1) 把知识库根登记到状态目录 config.json（执行：mkdir -p "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space" && printf '{"vault": "%s"}' "\$(pwd)" > "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space/config.json"——此写在工作区之外，会弹一次审批，等待用户批准后再继续第 2 步）
-2) 用 sun_vault_write 创建知识库骨架（此时插件已从 config.json 动态解析 vault = 你的工作目录）：
+1) 用 sun_vault_write 创建知识库骨架（vault 即你的工作目录，已在会话创建时自动登记）：
    - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律：Journal 由 Router 独占、日期一律本地时间 YYYY-MM-DDTHH:mm 不带时区后缀、结论必注出处）
    - 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：IM ≤100 字结论先行 + §3 打扰分级：info 攒批/ask 立即/urgent 加 DING）
    - 90-Meta/memory.md：初始版（# 关于用户，待填充）
-3) 用 sun_vault_write 写 90-Meta/system/state.json：{"routerSession": "${sid}", "vault": "<你的工作目录绝对路径>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm>"}（自登记，供孙学空间发现与轮换机制使用）
-4) 完成后列出生成的文件清单与知识库路径。` }],
+2) 用 sun_vault_write 写 90-Meta/system/state.json：{"routerSession": "${sid}", "vault": "<你的工作目录绝对路径>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm>"}（自登记，供孙学空间发现与轮换机制使用）
+3) 完成后列出生成的文件清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
           try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
