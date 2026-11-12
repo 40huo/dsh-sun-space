@@ -17,7 +17,14 @@ import { readFileSync, existsSync } from 'node:fs'
 
 const BASE = 'http://127.0.0.1:3081'
 const LOG = '/tmp/sun-dsh-web.log'
-const VAULT = process.env.SUN_VAULT ?? `${process.env.HOME}/Workspace/sun-vault`
+// vault 解析与插件同源：①SUN_VAULT ②~/.dsh/state/sun-space/config.json（用户手写覆盖）③约定路径
+const configVault = (() => {
+  try {
+    const v = JSON.parse(readFileSync(`${process.env.DSH_HOME ?? process.env.HOME}/.dsh/state/sun-space/config.json`, 'utf8')).vault
+    return typeof v === 'string' && v.startsWith('/') ? v : undefined
+  } catch { return undefined }
+})()
+const VAULT = process.env.SUN_VAULT ?? configVault ?? `${process.env.HOME}/Workspace/sun-vault`
 
 function fail(msg) { console.error('❌ ' + msg); process.exit(1) }
 

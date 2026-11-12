@@ -1,5 +1,5 @@
 /**
- * sun-router 预设的子插件：注册 4 个 sun_* 应用工具。
+ * sun-router 预设的子插件：注册 7 个 sun_* 应用工具。
  * sun_route 由官方 @deepseek-ai/dsh-tool-subagent 实例提供（cordis.patch.yml：
  * toolName: sun_route + agentPreset: sun-worker）——子代白名单由组合机制保证。
  * 工具契约：ToolDefinition = { name, description, parameters, output:{schema,render}, execute }。
@@ -12,7 +12,7 @@ import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
 
-import { vaultPath } from './vault-path'
+import { cwdIsVaultCandidate, readStateSnapshot, registerVaultRootFromSession, vaultPath } from './vault-path'
 
 /** 从工具执行上下文提取会话工作目录（用户在哪个工作区开会话，vault 就解析到哪）。防御式：形状未知时返回 undefined。 */
 function sessionCwdOf(exec: unknown): string | undefined {
@@ -140,11 +140,13 @@ export function apply(ctx: Context) {
     },
     async (args: { path: string; content: string; mode?: string }, exec?: unknown) => {
       try {
-        const p = resolveSafe(vaultPath(sessionCwdOf(exec)), args.path)
+        const root = vaultPath(sessionCwdOf(exec))
+        const p = resolveSafe(root, args.path)
         await mkdir(join(p, '..'), { recursive: true })
         if (args.mode === 'append') await appendFile(p, args.content, 'utf8')
         else await writeFile(p, args.content, 'utf8')
-        return { ok: true, data: { path: args.path, bytes: Buffer.byteLength(args.content) } }
+        // vault 字段回显实际解析根：初始化指令据此写 90-Meta/system/state.json，勿凭工作目录猜测
+        return { ok: true, data: { path: args.path, vault: root, bytes: Buffer.byteLength(args.content) } }
       } catch (e) {
         if (e instanceof VaultPathError) return { ok: false, note: `路径被拒绝: ${e.message}` }
         return { ok: false, note: String((e as Error).message).slice(0, 200) }
@@ -227,6 +229,43 @@ export function apply(ctx: Context) {
   ))
 
   ctx.tools.register(def(
+    'sun_state_read',
+    '读取插件状态目录（~/.dsh/state/sun-space/）的登记与解析视图：config（用户手写 vault 覆盖）、state（workspaces 分桶登记 + 全局 vault 镜像）、resolvedVault（本会话实际生效的知识库根）。vault 解析诊断 / 晨报自检"登记 vs 生效"比对用。',
+    { type: 'object', properties: {} },
+    async (_args: Record<string, never>, exec?: unknown) => {
+      try {
+        return { ok: true, data: readStateSnapshot(sessionCwdOf(exec)) }
+      } catch (e) {
+        return { ok: false, note: String((e as Error).message).slice(0, 200) }
+      }
+    },
+  ))
+
+  ctx.tools.register(def(
+    'sun_state_write',
+    '把当前会话工作目录登记为本工作区的 vault 根（state.json 的 workspaces 分桶映射——一桶一 vault，不影响其他工作区/实例；仅空目录或已含 90-Meta 骨架的目录可登记）。零审批。用于：插件升级前创建的旧会话迁移、登记缺失自愈。值由系统从会话上下文派生，只接受 vault:true，不接受路径参数。',
+    {
+      type: 'object',
+      properties: { vault: { type: 'boolean', description: '登记本会话工作目录为 vault 根（唯一合法值 true）' } },
+      required: ['vault'],
+    },
+    async (args: { vault?: boolean }, exec?: unknown) => {
+      if (args.vault !== true) return { ok: false, note: '仅接受 vault:true——登记值由系统从会话上下文派生，不接受手工传路径' }
+      const cwd = sessionCwdOf(exec)
+      if (!cwd) return { ok: false, note: '无法从会话上下文提取工作目录（绝对路径）' }
+      if (process.env.SUN_VAULT?.trim()) return { ok: false, note: `SUN_VAULT 已显式钉死（${process.env.SUN_VAULT}），不登记——尊重显式覆盖` }
+      if (!cwdIsVaultCandidate(cwd)) return { ok: false, note: `${cwd} 不是 vault 候选（须为空目录或已含 90-Meta 骨架）——有内容而无骨架的工作区目录不登记` }
+      try {
+        const changed = registerVaultRootFromSession(cwd) // false = 同桶已登记（幂等）
+        const snap = readStateSnapshot(cwd)
+        return { ok: true, data: { bucket: cwd, registered: snap.state?.workspaces?.[cwd] ?? null, changed, resolvedVault: snap.resolvedVault } }
+      } catch (e) {
+        return { ok: false, note: String((e as Error).message).slice(0, 200) }
+      }
+    },
+  ))
+
+  ctx.tools.register(def(
     'sun_route',
     '创建子 Worker 会话并分派任务（task_id + prompt，可选 cwd）。子会话以 task_id 命名、其会话 id 自动回写任务笔记 session 字段（工作台卡片可直达）。cwd 用于跨目录任务（如代码开发，传仓库根的绝对路径）——沙箱可写区自动跟随会话 cwd；产物落库仍走 sun_artifact_write（vault 绝对路径，不受 cwd 影响）。name 冲突时自动改用系统命名。',
     {
@@ -275,5 +314,5 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify sun_route(subagents)')
+  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify sun_state_read sun_state_write sun_route(subagents)')
 }

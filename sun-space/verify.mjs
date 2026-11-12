@@ -62,7 +62,7 @@ if (composed) {
 // ---------- ② tsc 严格检查（抓补丁链丢声明，aliveRef 教训） ----------
 section('② TypeScript 严格检查')
 try {
-  const files = ['index', 'source', 'router-tools', 'worker-guard', 'worker-vault', 'vault', 'dws', 'ambient']
+  const files = ['index', 'source', 'router-tools', 'worker-guard', 'worker-vault', 'vault', 'vault-path', 'dws', 'ambient']
     .map(n => `src/${n}.ts`).join(' ').replace('src/ambient.ts', 'src/ambient.d.ts')
   execFileSync('npx', ['tsc', '--noEmit', '--strict', '--module', 'esnext', '--moduleResolution', 'bundler',
     '--target', 'es2022', '--skipLibCheck', ...files.split(' ')],

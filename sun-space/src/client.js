@@ -20,9 +20,10 @@ window.__ModuleLoader__.load({
       const VAULT_DIRNAME = 'sun-vault' // vault 目录名约定；绝对路径动态发现，见 resolveVault
       // 架构 §4.1 不变量：呈现层不得持有会话 id / vault 绝对路径常量（Router 会话会轮换，机器会换）。
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
-      // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
+      // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
+      // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v18' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v20' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -97,12 +98,18 @@ window.__ModuleLoader__.load({
 
       // ===== vault 绝对路径发现（跨机器；呈现层不持常量，架构 §4.1 同款不变量）=====
       // 链：会话 cwd 推 HOME → 约定布局 <HOME>/Workspace/sun-vault 探测 state.json → state.json.vault 字段裁决。
-      // state.json.vault 由 Router 自登记/晨报自检维护（server 端 VAULT 是唯一事实源）。
-      async function resolveVault() {
-        const v = await gw('session/list', {})
-        const items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+      // state.json 由 Router 自登记/晨报自检维护（server 端解析链是唯一事实源）；
+      // workspaces 分桶映射优先（一桶一 vault，多实例互不污染，与 server ④ 级一致）。
+      // items 可选：调用方已取过 session/list 时复用（免重复 RPC）。
+      async function resolveVault(itemsIn, currentSessionId) {
+        let items = itemsIn
+        if (!items) {
+          const v = await gw('session/list', {})
+          items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+        }
         const scope = items.find(s => s?.projections?.values?.agentPreset === 'sun-router')?.sessionId ?? items[0]?.sessionId
         if (!scope) return null
+        const myCwd = currentSessionId ? String((items.find(s => s.sessionId === currentSessionId) ?? {}).cwd ?? '') : ''
         // ① 插件状态目录（HOME 从会话 cwd 推导，绝对路径读取）：
         //    config.json 优先（运行期事实源——引导初始化/用户手写即时生效），state.json 兜底（启动期快照）
         const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
@@ -111,6 +118,8 @@ window.__ModuleLoader__.load({
             try {
               const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/${file}`, 8)
               const st = JSON.parse(raw)
+              const mapped = myCwd.startsWith('/') ? st?.workspaces?.[myCwd] : undefined // 分桶登记（本工作区）
+              if (typeof mapped === 'string' && mapped.startsWith('/')) return mapped
               if (st?.vault && st.vault.startsWith('/')) return st.vault
             } catch { /* 该文件不存在 → 下一个 */ }
           }
@@ -163,15 +172,31 @@ window.__ModuleLoader__.load({
       // ===== 初始化检查（在任何会话的 tab 上都能跑；① 用当前会话作 workspaceFiles scope）=====
       async function runInitChecks(currentSessionId) {
         const c = { vault: false, presets: false, routerSession: null, vaultPath: null, currentCwd: null, notes: [] }
+        // 会话列表只取一次：currentCwd 供 ① 跨工作区提示与一键初始化，router 解析复用
+        let items = null
+        try {
+          const sl = await gw('session/list', {})
+          items = Array.isArray(sl?.items) ? sl.items : Object.values(sl?.items ?? {})
+          c.currentCwd = (items.find(s => s.sessionId === currentSessionId) ?? {}).cwd ?? null
+        } catch { c.notes.push('会话列表不可达 → 重试或检查实例') }
         // ① 知识库：vault 路径动态发现 + runbook 探测
-        const vault = await resolveVault()
+        const vault = await resolveVault(items, currentSessionId)
         c.vaultPath = vault
         if (vault && currentSessionId) {
           try { await readVaultFile(currentSessionId, `${vault}/90-Meta/runbook.md`, 10); c.vault = true } catch {
             c.notes.push(`知识库未就绪（已定位 ${vault}，缺 90-Meta 骨架）：① 用 Obsidian 打开该目录 ② 可让任意 Router 会话执行"初始化知识库"指令 ③ 重新检查`)
           }
+          // 跨工作区提示：识别到的 vault 在别处、当前工作区无骨架——一键初始化将以当前工作区为根
+          //（服务端门控：仅空目录或已含 90-Meta 的工作区目录会被当 vault 登记/解析，见 vault-path.ts）
+          if (c.currentCwd && c.currentCwd !== vault) {
+            try { await readVaultFile(currentSessionId, `${c.currentCwd}/90-Meta/runbook.md`, 2) } catch {
+              c.notes.push(`知识库识别在 ${vault}；当前工作区 ${c.currentCwd} 尚无骨架——【创建 Router 会话】将以当前工作区为知识库根初始化；若要沿用 ${vault}，请到它所在的工作区开会话`)
+            }
+          }
         } else if (!vault) {
-          c.notes.push(`未找到知识库目录：按约定应在 <用户目录>/Workspace/${VAULT_DIRNAME}（含 90-Meta/system/state.json）；自定义位置需由 Router 把绝对路径写进 state.json 的 vault 字段`)
+          c.notes.push(c.currentCwd
+            ? `未找到既有知识库——当前工作区 ${c.currentCwd} 将作为知识库根（待初始化）：完成下方初始化引导即可`
+            : `未找到知识库目录：按约定应在 <用户目录>/Workspace/${VAULT_DIRNAME}（含 90-Meta/system/state.json）；自定义位置需由 Router 把绝对路径写进 state.json 的 vault 字段`)
         } else {
           c.notes.push('知识库检查需要会话作读取通道 → 先创建会话')
         }
@@ -188,11 +213,12 @@ window.__ModuleLoader__.load({
           c.notes.push('预设服务不可达 → 确认 Harness 实例在线、插件已启用')
         }
         // ③ Router 会话：动态解析 + 首个 sun-router 会话创建时自动登记其 cwd 为 vault 根
-        //   （"当前目录作为 vault"语义的插件层落点；env/config 更高优先级不受影响）
+        //   （"当前目录作为 vault"语义的插件层落点；门控在服务端——空目录/已含骨架才登记）
         try {
-          const sl = await gw('session/list', {})
-          const items = Array.isArray(sl?.items) ? sl.items : Object.values(sl?.items ?? {})
-          c.currentCwd = (items.find(s => s.sessionId === currentSessionId) ?? {}).cwd ?? null
+          if (!items) { // 顶部取失败时兜底重取
+            const sl = await gw('session/list', {})
+            items = Array.isArray(sl?.items) ? sl.items : Object.values(sl?.items ?? {})
+          }
           // vault 根登记由宿主插件在 sun-router 会话创建时自动完成（index.ts agent/created 钩子）
           c.routerSession = vault ? await resolveRouterSession(vault, items) : null
           if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
@@ -277,13 +303,14 @@ window.__ModuleLoader__.load({
             requestId: 'sun-init-' + Date.now(),
             sessionId: sid,
             mode: 'queue',
-            content: [{ type: 'text', text: `【孙学空间初始化】你是新环境的 Sun Router（你的会话 id：${sid}）。你的工作目录即知识库根（vault）。按顺序完成：
-1) 用 sun_vault_write 创建知识库骨架（vault 即你的工作目录，已在会话创建时自动登记）：
+            content: [{ type: 'text', text: `【孙学空间初始化】你是新环境的 Sun Router（你的会话 id：${sid}）。按顺序完成：
+1) 用 sun_state_write 确认/补全本工作区的 vault 根登记（参数 {"vault": true}——会话创建时已自动登记，此步幂等自愈；若 ok:false 按注记处理）
+2) 用 sun_vault_write 创建知识库骨架（实际根以工具返回的 vault 字段为准，勿凭工作目录猜测）：
    - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律：Journal 由 Router 独占、日期一律本地时间 YYYY-MM-DDTHH:mm 不带时区后缀、结论必注出处）
    - 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：IM ≤100 字结论先行 + §3 打扰分级：info 攒批/ask 立即/urgent 加 DING）
    - 90-Meta/memory.md：初始版（# 关于用户，待填充）
-2) 用 sun_vault_write 写 90-Meta/system/state.json：{"routerSession": "${sid}", "vault": "<你的工作目录绝对路径>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm>"}（自登记，供孙学空间发现与轮换机制使用）
-3) 完成后列出生成的文件清单与知识库路径。` }],
+3) 用 sun_vault_write 写 90-Meta/system/state.json：{"routerSession": "${sid}", "vault": "<知识库根绝对路径——填第 2 步 sun_vault_write 返回的 vault 值>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm>"}（自登记，供孙学空间发现与轮换机制使用）
+4) 完成后列出生成的文件清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
           try { hostCtx.uiWorkspace.openSession(sid) } catch (e) { D.errors.push('openSession: ' + String(e)) }
@@ -298,13 +325,13 @@ window.__ModuleLoader__.load({
             requestId: 'sun-skel-' + Date.now(),
             sessionId: routerSession,
             mode: 'queue',
-            content: [{ type: 'text', text: `【知识库骨架补建 + vault 根登记】你的工作目录即知识库根（vault）。按顺序完成：
-1) 把知识库根登记到状态目录 config.json（执行：mkdir -p "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space" && printf '{"vault": "%s"}' "\$(pwd)" > "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space/config.json"——此写在工作区之外，会弹一次审批，等待用户批准后再继续）
-2) 用 sun_vault_write 创建/补全知识库骨架：
-   - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；写入纪律同 runbook）
+            content: [{ type: 'text', text: `【知识库骨架补建 + vault 根登记】按顺序完成：
+1) 用 sun_state_write 登记本工作区为 vault 根（参数 {"vault": true}——分桶登记，零审批，不影响其他工作区；值由系统从你的会话上下文派生。若 ok:false 按注记处理，禁止用 shell 手写状态目录）
+2) 用 sun_vault_write 创建/补全知识库骨架（实际根以工具返回的 vault 字段为准，勿凭工作目录猜测）：
+   - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律同 runbook）
    - 90-Meta/runbook.md：若缺失则写初始版（# Sun 行为手册 + v0.1）
    - 90-Meta/memory.md：若缺失则写初始版（# 关于用户）
-   - 90-Meta/system/state.json：{"routerSession": "${routerSession}", "vault": "<你的工作目录绝对路径>", "updatedAt": "<本地时间>"}（已有的话合并更新 routerSession/vault 字段）
+   - 90-Meta/system/state.json：{"routerSession": "${routerSession}", "vault": "<第 2 步 sun_vault_write 返回的 vault 值>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm 无时区后缀>"}（已有的话合并更新 routerSession/vault 字段）
 完成后报告清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
@@ -423,7 +450,7 @@ window.__ModuleLoader__.load({
       function OnboardPanel({ checks, currentSessionId, onRetry }) {
         const steps = [
           { n: 1, ok: checks.presets, title: '确认依赖插件', desc: checks.presets ? '智能体协作 / 子智能体插件已启用' : '打开插件面板，启用 sun-space / 智能体协作相关插件后重启实例', action: checks.presets ? null : 'plugins' },
-          { n: 2, ok: !!checks.routerSession, title: '一键初始化（Router 会话 + 知识库）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : `一键完成：以当前工作区目录${checks.currentCwd ? `（${checks.currentCwd}）` : ''}为知识库根 → 创建 Router 会话 → 写入 90-Meta 骨架 → 自登记（仅 ~/.dsh 登记需一次批准）`, action: checks.presets && !checks.routerSession ? 'create-router' : null },
+          { n: 2, ok: !!checks.routerSession, title: '一键初始化（Router 会话 + 知识库）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : `一键完成：以当前工作区目录${checks.currentCwd ? `（${checks.currentCwd}）` : ''}为知识库根 → 创建 Router 会话 → 写入 90-Meta 骨架 → 分桶自登记（全程零审批）`, action: checks.presets && !checks.routerSession ? 'create-router' : null },
           { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : (checks.routerSession ? '知识库骨架缺失 → 点下方按钮让 Router 补建' : '完成第②步后自动创建'), action: checks.presets && checks.routerSession && !checks.vault ? 'init-skeleton' : null },
         ]
         const allOk = steps.every(x => x.ok)

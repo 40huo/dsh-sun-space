@@ -41,8 +41,8 @@ export const name = 'worker-watchdog'
 
 export const inject = ['timer']
 
-import { vaultPath } from './vault-path'
-const triggerDir = () => `${vaultPath()}/90-Meta/triggers`
+import { vaultPathForHost } from './vault-path'
+const triggerDir = () => `${vaultPathForHost()}/90-Meta/triggers`
 
 /** 默认停滞阈值 15 分钟：长思考/长命令完成后即重置计时，真卡死撑不到这么久。 */
 export const DEFAULT_STALL_MS = 15 * 60_000

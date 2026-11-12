@@ -14,14 +14,14 @@ import { currentUserId, notifySelf, snapshot, diff, type DwsSnapshot } from './d
 
 export const inject = ['timer']
 
-import { vaultPath } from './vault-path'
+import { vaultPathForHost } from './vault-path'
 
 /** 轮询周期（毫秒）：纯程序层，可调密。 */
 const POLL_MS = 30 * 60_000
 
-const triggerDir = () => `${vaultPath()}/90-Meta/triggers`
+const triggerDir = () => `${vaultPathForHost()}/90-Meta/triggers`
 
-const snapshotFile = () => `${vaultPath()}/90-Meta/mock-data/last-snapshot.json`
+const snapshotFile = () => `${vaultPathForHost()}/90-Meta/mock-data/last-snapshot.json`
 
 /** trigger 文件 TTL：超过即视为已消费/过期，轮询成功路径顺带清理。 */
 export const TRIGGER_TTL_MS = 7 * 24 * 60 * 60_000

@@ -18,7 +18,8 @@ export function apply(ctx: Context) {
   ctx.plugin(source)
   ctx.plugin(workerWatchdog) // 全局 scope：盯 sun-worker 子代理卡死（事件冒泡到这里）
   // 首个 sun-router 会话创建时，自动登记其工作目录为 vault 根
-  // （"当前目录作为 vault"语义的插件层落点；env/config 更高优先级不受影响，已有登记不覆盖）
+  // （"当前目录作为 vault"语义的插件层落点；门控在 registerVaultRootFromSession——
+  //  仅空目录或已含 90-Meta 骨架的工作区目录才登记，宿主 boot 桶不认；已有登记不覆盖）
   try {
     ctx.on('agent/created', (...args: unknown[]) => {
       const agent = (args[0] as { agent?: { session?: { header?: Record<string, unknown>; cwd?: unknown } } } | undefined)?.agent

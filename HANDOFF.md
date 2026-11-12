@@ -17,7 +17,7 @@
 | 模块 | 状态 | 证据 |
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
-| 插件（sun-space） | ✅ 双预设 + 5 工具 + Source 轮询 + 初始化检查面板 | lib/*.mjs（tsdown 构建） |
+| 插件（sun-space） | ✅ 双预设 + 7 工具 + Source 轮询 + 初始化检查面板 | lib/*.mjs（tsdown 构建） |
 | 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，v15：内部分段控件三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建一键预填四条生产预设；派活树 + 直达子会话 + target 漂移检测）| 浏览器 E2E 截图 |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
@@ -54,7 +54,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 | **会话 id 非常量** | **禁止硬编码 Router 会话 id**（v0.4.1 不变量）。唯一事实源：vault `90-Meta/system/state.json`；工作台解析链 = session/list(sun-router) → state.json 裁决 → updatedAt 最新；写回 = 创建按钮 session/prompt 自登记 + 晨报自检修正；verify --smoke ⑤ 断言 schedule target 对齐 |
 | 子会话跳转 | 工作台卡片 → openSession(task.session 裸 uuid)；**测试必须用 cua/Playwright 真实点击**（el.click() 缺指针序列会静默无效） |
 | 定时 | 业务定时全部在 DSH 原生 schedule（晨报/日报/Watchdog/周复盘，代码零 cron）；Source 只做 dws 轮询 diff（30min）。**三层分工**：任务 prompt 只写指令（薄引用 runbook §N）｜人格在 preset `persona.prefix`（补丁分发，零维护）｜规则在 runbook。**target 治理走程序化路径**：API target 有 `session`（固定已有会话）/`new_once`/`new` 三种，UI 只暴露后两个——**新增/改靶/删除用 `pnpm sun:schedule`（scripts/schedule-cli.mjs：list/add/retarget/rm，target 自动绑 state.json 解析出的当前 Router 会话，实测全通过）**；UI 面板用于查看/启停/改时间 |
-| **孙学空间引导（v17）** | 两步启用（①插件确认 ②一键初始化：Router 会话 + 知识库，sun_vault_write 零审批）+ 补建骨架兜底 + 定时模板速建；vault 根四级解析：SUN_VAULT → config.json → **Router 会话 cwd 自动登记** → 约定路径 |
+| **孙学空间引导（v20）** | 两步启用（①插件确认 ②一键初始化：Router 会话 + 知识库，sun_vault_write 零审批）+ 补建骨架兜底 + 定时模板速建 + 跨工作区提示；vault 解析六级（v0.3.2）：SUN_VAULT → config.json → **会话目录（含 90-Meta 骨架才算）** → **workspaces 分桶映射（state.json，一桶一 vault，多实例互不污染；首个 sun-router 会话在空目录/骨架目录创建时登记）** → 全局 vault 镜像 → 约定路径；无 cwd 调用方走 `vaultPathForHost()`（实例进程 cwd 查桶）；⑥ 兜底值**不落盘**（防幽灵登记，见踩坑 11）；**状态工具对（v0.3.2）**：`sun_state_read`（config/state/resolvedVault 三层诊断视图——"登记 vs 生效"一眼可比）+ `sun_state_write {vault:true}`（分桶自登记，值由服务端从会话上下文派生，候选门控同 agent/created 钩子——旧会话迁移/补建流零审批，取代 v0.3.1 的 shell 写 config.json 弹窗路径） |
 | **发版方式** | GitHub Release 驱动：`npm version patch && git push --tags` → CI 自动 npm 发布 + gh release create（自动更新日志）；仓库工作流权限已设 read-write（GITHUB_TOKEN 建 Release 需要） |
 | **Worker 实时看门狗** | `worker-watchdog.ts`（全局 scope，事件冒泡）：盯 sun-worker 委派子代理，`tools/post-execute` 刷新计时，无活动 >15 分钟（`SUN_WATCHDOG_STALL_MS` 可调/`SUN_WATCHDOG_DISABLED=1` 关闭）→ trigger 落盘 + urgent 通知 + interrupt 停掉 → settled 唤醒 Router。与 Watchdog 定时巡检互补：实时救火 + 定时清点。E2E 已验证（stall 触发→Router 被唤醒转述"被中途停止"） |
 | Worker 跨目录 | `sun_route` 可选 `cwd`（绝对路径，如仓库根）——沙箱可写区**自动跟随会话 cwd**（patch 里 `workspaceRoot` 只是无 cwd 时的兜底）；产物落库仍走 `sun_artifact_write`（vault 绝对路径，与 cwd 无关） |
@@ -75,6 +75,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 7. 会话轮换触发线（catalog >50）——观察，W46 周复盘检视。
 8. HRM 档案表单（用户侧，截止 12-07）。
 9. vault 根目录有一空文件 `J-20261107.md`（0 字节杂物，非插件可写路径产物）——可删，留人决定。
+10. **default-workspace 残留测试骨架**（`00-Inbox/40-Journal/50-Tasks/60-Archive/90-Meta` + 根部 dws-todo-*.json，11-11 深夜初始化测试遗留）：会使主实例会话按"含骨架工作区"把 vault 解析到 boot 桶——确认无真实数据后清掉（删除前主实例解析会命中它，晨报/日报会读写错位置）。
 
 ## 六、踩坑记录（勿重蹈）
 
@@ -88,3 +89,4 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 10. **schedule/create 契约**（typert 严格校验）：`request` 内是 `{title, prompt, timing, target}`——timing 为**嵌套** `{kind:'cron', cron:{expression, time_zone}}` 或 `{kind:'after', after_seconds}`；字段 snake_case 在 timing 内。schedule/list 返回的是读模型（平铺 expression/timeZone），勿照搬回写。
 10. **脚本侧网关验收方法**：launch-token 交换（GET /?token=… 存 cookie）→ RPC 信封 `{type:'client-request', rpcId, method, payload:{args}}` 且 method 同时在 URL 路径 `/api/<method>`；`agentPresets/list` 空 args、`schedule/*` 包 `request`、`session/page` 包 `request.address={kind:'session',sessionId}`（读会话历史页，验收利器）；cookie jar 里旧实例的 `dsh-auth-<随机后缀>` 会残留，换实例重启后要清 jar。
 6. **时间戳时区双坑**（2026-11-08 B-1 定案）：① 带时区偏移（`+08:00`）的 datetime 写进 frontmatter，Obsidian/Bases 会换算显示差 8h（文件值正确）——写入端一律无后缀本地时间 `YYYY-MM-DDTHH:mm`；② `toISOString()` 取"今天"是 UTC 日期，北京时间 0~8 点取到昨天——一律用 `vault.ts` 的 `localDate()`/`localStamp()`。
+11. **publishVaultState 固化兜底值 = 幽灵登记 + 全局单槽登记多实例交叉污染**（v0.3.2 修复，2026-11-12 homevault 会话定位）：① 启动期把解析结果（含兜底默认 `~/Workspace/sun-vault`）无条件写进 `state.json`，默认路径被固化成登记值 → 首会话登记被 first-wins 挡死、会话工作目录级永不生效——新开空工作区（homevault）识别到的永远是旧 vault 的幽灵（此幽灵此前还恰好遮住了第二个 bug）。② 即便登记成功，全局单槽 `vault` 字段在多实例并存时交叉污染：homevault 实例登记后，主实例明早 08:45 晨报会读错库（DSH 会话按实例 boot cwd 分桶，vault 却是全局一个）。修复：兜底值**不落盘**（仅显式 env/config 才写全局槽）+ **workspaces 分桶映射**（`state.json` 的 `workspaces[<桶cwd>]=<vault>`，一桶一 vault）+ 无 cwd 调用方（source/watchdog）走 `vaultPathForHost()` 按实例进程 cwd 查桶。教训一：把"解析结果"当"登记值"持久化前，先分清值来自显式配置还是兜底默认；教训二：DSH 是多实例分桶架构，跨会话共享状态必须按桶键控，全局单槽必污染。
