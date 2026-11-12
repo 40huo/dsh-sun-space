@@ -13,7 +13,7 @@ concurrency:
 
 permissions:
   id-token: write   # OIDC 短时签名，唯一凭证
-  contents: read
+  contents: write   # gh release create 需要（read 会 403——v0.3.1/v0.3.2 两版 tag-push 路径栽过）
 
 jobs:
   publish:
