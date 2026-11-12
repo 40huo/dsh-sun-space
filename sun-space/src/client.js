@@ -298,12 +298,14 @@ window.__ModuleLoader__.load({
             requestId: 'sun-skel-' + Date.now(),
             sessionId: routerSession,
             mode: 'queue',
-            content: [{ type: 'text', text: `【知识库骨架补建】用 sun_vault_write 在你的 vault 路径下创建：
-- 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；写入纪律同 runbook）
-- 90-Meta/runbook.md：若缺失则写初始版（# Sun 行为手册 + v0.1）
-- 90-Meta/memory.md：若缺失则写初始版（# 关于用户）
-- 90-Meta/system/state.json：{"routerSession": "${routerSession}", "vault": "<你的 vault 绝对路径>", "updatedAt": "<本地时间>"}（已有的话合并更新 routerSession/vault 字段）
-完成后报告清单。` }],
+            content: [{ type: 'text', text: `【知识库骨架补建 + vault 根登记】你的工作目录即知识库根（vault）。按顺序完成：
+1) 把知识库根登记到状态目录 config.json（执行：mkdir -p "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space" && printf '{"vault": "%s"}' "\$(pwd)" > "\${DSH_HOME:-\$HOME}/.dsh/state/sun-space/config.json"——此写在工作区之外，会弹一次审批，等待用户批准后再继续）
+2) 用 sun_vault_write 创建/补全知识库骨架：
+   - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；写入纪律同 runbook）
+   - 90-Meta/runbook.md：若缺失则写初始版（# Sun 行为手册 + v0.1）
+   - 90-Meta/memory.md：若缺失则写初始版（# 关于用户）
+   - 90-Meta/system/state.json：{"routerSession": "${routerSession}", "vault": "<你的工作目录绝对路径>", "updatedAt": "<本地时间>"}（已有的话合并更新 routerSession/vault 字段）
+完成后报告清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
           onRetry()
