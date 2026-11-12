@@ -535,6 +535,7 @@ window.__ModuleLoader__.load({
           h('div', { key: 'tabs', style: { display: 'flex', gap: 3, marginBottom: 16, background: 'rgba(128,128,128,0.12)', borderRadius: 8, padding: 3 } }, [
             ['overview', '总览'], ['schedules', '定时任务'], ['setup', '设置'],
           ].map(([id, label]) => h('button', { key: id, onClick: () => setTab(id), style: { flex: 1, border: 'none', cursor: 'pointer', fontSize: 13, padding: '6px 0', borderRadius: 6, color: 'inherit', background: tab === id ? 'rgba(128,128,128,0.28)' : 'transparent', opacity: tab === id ? 1 : 0.6, transition: 'background 0.15s' } }, label))),
+          h('div', { key: 'vp', style: { fontSize: 12, opacity: 0.65, marginBottom: 12 } }, `📚 识别到的知识库：${vault ?? '（未定位——完成下方引导后自动登记）'}`),
           h('div', { key: 'cnt', style: { display: 'flex', gap: 18, marginBottom: 16 } },
             counters.map(([label, n, color]) => h('div', { key: label, style: { display: 'flex', alignItems: 'center', gap: 6 } }, [
               h('span', { key: 'd', style: { width: 8, height: 8, borderRadius: 4, background: color, display: 'inline-block' } }),
