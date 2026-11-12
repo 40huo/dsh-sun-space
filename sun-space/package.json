@@ -1,6 +1,6 @@
 {
   "name": "dsh-sun-space",
-  "version": "0.2.10",
+  "version": "0.3.0",
   "type": "module",
   "description": "Sun Space：DeepSeek Harness 个人超智能体插件——Router/Worker 双预设工具白名单、钉钉待办轮询、Obsidian 知识库落库、会话工作台与定时任务管理。",
   "exports": {
