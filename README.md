@@ -26,13 +26,15 @@ dsh plugin --profile web add dsh-sun-space
 # 或指定版本
 dsh plugin --profile web add dsh-sun-space@0.2.0
 
-# 本机打包（发新版时）
-cd sun-space && npm publish   # 包名 dsh-sun-space，需 npm 登录
+# 发版（推荐：GitHub Release 驱动，无令牌）
+# 1) 本仓库已配 .github/workflows/publish.yml（Trusted Publishing / OIDC）
+# 2) 在 npm 包 Settings → Trusted Publisher 登记 40huo/dsh-sun-space / publish.yml（一次性）
+# 3) 发版 = bump 版本 → 推 main → 网页创建 Release（tag 形如 v0.2.9，填更新说明）→ 自动构建发布
+cd sun-space && npm version patch && git push
+# 然后到 GitHub → Releases → Draft a new release → 选刚推的 tag → 填说明 → Publish
 
-# CI 发版（Trusted Publishing，无令牌）：本仓库已配 .github/workflows/publish.yml，
-# 在 npm 包 Settings → Trusted Publisher 登记 40huo/dsh-sun-space / publish.yml 后，
-# 打 tag 即自动构建发布：
-cd sun-space && npm version patch && git push --tags
+# 也可本地直接发（需 npm 登录）
+# cd sun-space && npm publish
 
 # 目标机器前置（一次性）
 # ① 安装同版本 dsh 与 pnpm  ② dws 安装并 dws auth login

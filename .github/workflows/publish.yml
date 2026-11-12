@@ -3,6 +3,8 @@ name: npm-publish
 on:
   push:
     tags: ["v*"]
+  release:
+    types: [published]   # 网页创建 Release（含新 tag）即触发——推荐发版方式
   workflow_dispatch: {}
 
 concurrency:
