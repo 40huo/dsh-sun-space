@@ -14,6 +14,13 @@ export const inject = ['tools', 'subagents']
 
 import { vaultPath } from './vault-path'
 
+/** 从工具执行上下文提取会话工作目录（用户在哪个工作区开会话，vault 就解析到哪）。防御式：形状未知时返回 undefined。 */
+function sessionCwdOf(exec: unknown): string | undefined {
+  const e = exec as { agent?: { session?: { cwd?: unknown; header?: { cwd?: unknown } } }; session?: { cwd?: unknown } } | undefined
+  const c = e?.agent?.session?.cwd ?? e?.agent?.session?.header?.cwd ?? e?.session?.cwd
+  return typeof c === 'string' && c.startsWith('/') ? c : undefined
+}
+
 const text = (s: string) => [{ type: 'text', text: s }]
 const ok = (value: unknown) => ({
   type: 'object',
@@ -66,10 +73,10 @@ export function apply(ctx: Context) {
       },
       required: ['what'],
     },
-    async (args: { what: string; date?: string; path?: string; full?: boolean }) => {
+    async (args: { what: string; date?: string; path?: string; full?: boolean }, exec?: unknown) => {
       try {
         if (args.what === 'triggers') {
-          const dir = resolveSafe(vaultPath(), '90-Meta/triggers')
+          const dir = resolveSafe(vaultPath(sessionCwdOf(exec)), '90-Meta/triggers')
           try {
             const files = (await readdir(dir)).filter(f => f.endsWith('.json')).sort().reverse().slice(0, 10)
             const triggers = []
@@ -85,13 +92,13 @@ export function apply(ctx: Context) {
         }
         if (args.what === 'journal') {
           const d = args.date ?? localDate()
-          const p = resolveRead(vaultPath(), `40-Journal/${d}.md`)
+          const p = resolveRead(vaultPath(sessionCwdOf(exec)), `40-Journal/${d}.md`)
           const raw = await readFile(p, 'utf8')
           if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
         }
         if (args.what === 'tasks') {
-          const dir = resolveSafe(vaultPath(), '50-Tasks')
+          const dir = resolveSafe(vaultPath(sessionCwdOf(exec)), '50-Tasks')
           const files = (await readdir(dir)).filter(f => f.endsWith('.md'))
           const tasks = []
           for (const f of files) {
@@ -102,12 +109,12 @@ export function apply(ctx: Context) {
           return { ok: true, data: { count: tasks.length, tasks } }
         }
         if (args.what === 'runbook' || args.what === 'memory') {
-          const p = resolveSafe(vaultPath(), `90-Meta/${args.what}.md`)
+          const p = resolveSafe(vaultPath(sessionCwdOf(exec)), `90-Meta/${args.what}.md`)
           return { ok: true, data: { text: (await readFile(p, 'utf8')).slice(0, 8000) } }
         }
         if (args.what === 'note') {
           if (!args.path) return { ok: false, note: 'note 需要 path' }
-          const raw = await readFile(resolveRead(vaultPath(), args.path), 'utf8')
+          const raw = await readFile(resolveRead(vaultPath(sessionCwdOf(exec)), args.path), 'utf8')
           if (args.full) return { ok: true, data: { text: raw.slice(0, 8000) } }
           return { ok: true, data: { frontmatter: parseFrontmatter(raw), summary: inlineSummary(raw) } }
         }
@@ -131,9 +138,9 @@ export function apply(ctx: Context) {
       },
       required: ['path', 'content'],
     },
-    async (args: { path: string; content: string; mode?: string }) => {
+    async (args: { path: string; content: string; mode?: string }, exec?: unknown) => {
       try {
-        const p = resolveSafe(vaultPath(), args.path)
+        const p = resolveSafe(vaultPath(sessionCwdOf(exec)), args.path)
         await mkdir(join(p, '..'), { recursive: true })
         if (args.mode === 'append') await appendFile(p, args.content, 'utf8')
         else await writeFile(p, args.content, 'utf8')
@@ -205,9 +212,9 @@ export function apply(ctx: Context) {
       },
       required: ['path', 'fields'],
     },
-    async (args: { path: string; fields: Record<string, string> }) => {
+    async (args: { path: string; fields: Record<string, string> }, exec?: unknown) => {
       try {
-        const p = resolveSafe(vaultPath(), args.path)
+        const p = resolveSafe(vaultPath(sessionCwdOf(exec)), args.path)
         const raw = await readFile(p, 'utf8')
         const updated = updateFrontmatter(raw, args.fields)
         await writeFile(p, updated, 'utf8')
@@ -260,7 +267,7 @@ export function apply(ctx: Context) {
       }
       // 子会话 id 回写任务笔记（卡片点击直达）
       try {
-        const p = resolveSafe(vaultPath(), `50-Tasks/${args.task_id}.md`)
+        const p = resolveSafe(vaultPath(sessionCwdOf(exec)), `50-Tasks/${args.task_id}.md`)
         const raw = await readFile(p, 'utf8')
         await writeFile(p, updateFrontmatter(raw, { session: String(activation.childId ?? '') }), 'utf8')
       } catch { /* 笔记缺失不阻断派发 */ }

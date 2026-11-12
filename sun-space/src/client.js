@@ -22,7 +22,7 @@ window.__ModuleLoader__.load({
       // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
       // vault 解析链：会话 cwd 推 HOME → 约定布局探测 state.json → state.json 的 vault 字段裁决（跨机自愈）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v17' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v18' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -115,7 +115,16 @@ window.__ModuleLoader__.load({
             } catch { /* 该文件不存在 → 下一个 */ }
           }
         }
-        // ② 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
+        // ② 会话 cwd 即 vault（用户"新建目录作为工作区并开会话"流：cwd 下有 90-Meta 即认定）
+        try {
+          const cwd = String((items.find(s => s.sessionId === scope) ?? {}).cwd ?? '')
+          if (cwd && cwd.startsWith('/')) {
+            await readVaultFile(scope, `${cwd}/90-Meta/runbook.md`, 2)
+            D.vaultFoundNoField = cwd
+            return cwd
+          }
+        } catch { /* 该 cwd 无 90-Meta → 约定兜底 */ }
+        // ③ 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
         const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
         for (const cand of candidates) {
           try {

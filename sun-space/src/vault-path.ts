@@ -5,11 +5,12 @@
  *   ① 环境变量 SUN_VAULT（启动命令注入，随进程生效）
  *   ② ~/.dsh/state/sun-space/config.json 的 vault 字段（用户手写，持久化，不入库）
  *   ③ ~/.dsh/state/sun-space/state.json 的 vault 字段（Router 会话创建时插件自动登记 = 用户选定的工作区目录）
- *   ④ 默认约定 ~/Workspace/sun-vault
+ *   ④ 会话工作目录（调用方从 exec 提取传入——用户在哪个工作区开会话，vault 就解析到哪）
+ *   ⑤ 默认约定 ~/Workspace/sun-vault
  *
  * ③ 的设计动机：用户的 vault 就是他在 DSH 里选定的那个目录——Router 会话创建时
  * 插件自动把该会话 cwd 登记为 vault 根（registerVaultRootFromSession），无需任何
- * 手工配置。①② 供自定义/覆盖；④ 仅在全新裸环境兜底。
+ * 手工配置。①② 供自定义/覆盖；⑤ 仅在全新裸环境兜底。
  *
  * 解析结果写回 state.json，作为浏览器端（孙学空间）的发现通道——浏览器经
  * workspaceFiles/read 以绝对路径读取该文件（工作区外绝对路径读取被宿主允许）。
@@ -27,11 +28,12 @@ export const DEFAULT_VAULT_DIRNAME = 'sun-vault'
  *  跟随 DSH_HOME：多实例（隔离 HOME 的测试环境）之间状态互不串扰。 */
 export const stateDir = () => join(process.env.DSH_HOME ?? homedir(), '.dsh', 'state', 'sun-space')
 
-/** 纯函数：四级优先解析（测试与 vaultPath 共用）。 */
+/** 纯函数：五级优先解析（测试与 vaultPath 共用）。 */
 export function computeVaultPath(
   envValue: string | undefined,
   configJson: string | undefined,
   stateJson: string | undefined,
+  sessionCwd: string | undefined,
   home = homedir(),
 ): string {
   if (envValue && envValue.trim() !== '') return envValue
@@ -39,23 +41,25 @@ export function computeVaultPath(
     try {
       const parsed = JSON.parse(raw ?? '')
       if (typeof parsed?.vault === 'string' && parsed.vault.startsWith('/')) return parsed.vault
-    } catch { /* 无/坏配置 → 下一级 */ }
+    } catch { /* 无/坏 JSON → 下一级 */ }
   }
+  if (sessionCwd && sessionCwd.startsWith('/')) return sessionCwd
   return join(home, 'Workspace', DEFAULT_VAULT_DIRNAME)
 }
 
 let cached: { at: number; key: string; value: string } = { at: 0, key: '', value: '' }
 
-/** 运行期解析：每次调用重读状态目录（60s 微缓存防抖），登记/手改后即时生效。 */
-export function vaultPath(now = Date.now()): string {
+/** 运行期解析：每次调用重读状态目录（60s 微缓存防抖），登记/手改后即时生效。
+ *  sessionCwd：调用方从 exec 提取的会话工作目录（可选）——用户在哪个工作区开会话，vault 就解析到哪。 */
+export function vaultPath(sessionCwd?: string, now = Date.now()): string {
   const dir = stateDir()
   let configJson: string | undefined
   let stateJson: string | undefined
   try { configJson = readFileSync(join(dir, 'config.json'), 'utf8') } catch { /* 无配置 */ }
   try { stateJson = readFileSync(join(dir, 'state.json'), 'utf8') } catch { /* 无状态 */ }
-  const key = `${configJson ?? ''}|${stateJson ?? ''}`
+  const key = `${sessionCwd ?? ''}|${configJson ?? ''}|${stateJson ?? ''}`
   if (now - cached.at < 60_000 && cached.key === key) return cached.value
-  const value = computeVaultPath(process.env.SUN_VAULT, configJson, stateJson)
+  const value = computeVaultPath(process.env.SUN_VAULT, configJson, stateJson, sessionCwd)
   cached = { at: now, key, value }
   return value
 }
@@ -94,7 +98,7 @@ export function publishVaultState(now = new Date()): void {
     const p = join(dir, 'state.json')
     let state: { vault?: string; [k: string]: unknown } = {}
     try { state = JSON.parse(readFileSync(p, 'utf8')) } catch { /* 首次 */ }
-    state.vault = vaultPath(now.getTime())
+    state.vault = vaultPath(undefined, now.getTime())
     state.updatedAt = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
     writeFileSync(p, JSON.stringify(state, null, 2), 'utf8')
   } catch { /* 写不进不阻断启动 */ }

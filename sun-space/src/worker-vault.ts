@@ -13,6 +13,13 @@ export const inject = ['tools']
 
 import { vaultPath } from './vault-path'
 
+/** 从工具执行上下文提取会话工作目录（同 router-tools）。 */
+function sessionCwdOf(exec: unknown): string | undefined {
+  const e = exec as { agent?: { session?: { cwd?: unknown; header?: { cwd?: unknown } } }; session?: { cwd?: unknown } } | undefined
+  const c = e?.agent?.session?.cwd ?? e?.agent?.session?.header?.cwd ?? e?.session?.cwd
+  return typeof c === 'string' && c.startsWith('/') ? c : undefined
+}
+
 const TASK_ID = /^T-\d{8}-\d{2}$/
 
 /** 纯函数：拼装受控产物路径；非法输入抛 VaultPathError。可单测。 */
@@ -46,13 +53,13 @@ export function apply(ctx: Context) {
       },
       render: (_args: unknown, value: unknown) => [{ type: 'text', text: JSON.stringify(value) }],
     },
-    execute: async (args: unknown) => {
+    execute: async (args: unknown, exec?: unknown) => {
       const { task_id: taskId, filename, content } = (args ?? {}) as {
         task_id?: string; filename?: string; content?: string
       }
       try {
         const rel = artifactPath(String(taskId), String(filename))
-        const abs = resolveSafe(vaultPath(), rel)
+        const abs = resolveSafe(vaultPath(sessionCwdOf(exec)), rel)
         await mkdir(join(abs, '..'), { recursive: true })
         await writeFile(abs, String(content ?? ''), 'utf8')
         return { ok: true, path: rel }

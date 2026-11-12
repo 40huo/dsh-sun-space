@@ -4,7 +4,7 @@ import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { computeVaultPath, registerVaultRootFromSession, vaultPath } from '../src/vault-path'
 
-describe('computeVaultPath（四级优先：env → config → state 登记 → 约定）', () => {
+describe('computeVaultPath（五级优先：env → config → state 登记 → 会话 cwd → 约定）', () => {
   it('① env 最高优先', () => {
     expect(computeVaultPath('/env', '{"vault":"/c"}', '{"vault":"/s"}', '/h')).toBe('/env')
   })
@@ -15,10 +15,10 @@ describe('computeVaultPath（四级优先：env → config → state 登记 → 
     expect(computeVaultPath(undefined, undefined, '{"vault":"/s"}', '/h')).toBe('/s')
   })
   it('④ 全缺 → 默认约定 ~/Workspace/sun-vault', () => {
-    expect(computeVaultPath(undefined, undefined, undefined, '/Users/x')).toBe('/Users/x/Workspace/sun-vault')
+    expect(computeVaultPath(undefined, undefined, undefined, undefined, '/Users/x')).toBe('/Users/x/Workspace/sun-vault')
   })
   it('非法 JSON/非绝对路径被跳过', () => {
-    expect(computeVaultPath(undefined, 'not-json', '{"vault":"relative"}', '/h')).toBe('/h/Workspace/sun-vault')
+    expect(computeVaultPath(undefined, 'not-json', '{"vault":"relative"}', undefined, '/h')).toBe('/h/Workspace/sun-vault')
   })
 })
 
@@ -56,7 +56,7 @@ describe('vaultPath（运行期，DSH_HOME 隔离）', () => {
       expect(vaultPath(Date.now() + 120_000)).toBe('/Users/x/homevault')
       // 无登记 → 真实用户 HOME 的约定兜底
       await rm(join(dir, 'state.json'))
-      expect(vaultPath(Date.now() + 180_000)).toBe(join(homedir(), 'Workspace', 'sun-vault'))
+      expect(vaultPath(undefined, Date.now() + 180_000)).toBe(join(homedir(), 'Workspace', 'sun-vault'))
     } finally {
       delete process.env.DSH_HOME
       await rm(home, { force: true, recursive: true })
