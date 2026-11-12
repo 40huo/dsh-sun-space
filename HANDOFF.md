@@ -54,6 +54,8 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 | **会话 id 非常量** | **禁止硬编码 Router 会话 id**（v0.4.1 不变量）。唯一事实源：vault `90-Meta/system/state.json`；工作台解析链 = session/list(sun-router) → state.json 裁决 → updatedAt 最新；写回 = 创建按钮 session/prompt 自登记 + 晨报自检修正；verify --smoke ⑤ 断言 schedule target 对齐 |
 | 子会话跳转 | 工作台卡片 → openSession(task.session 裸 uuid)；**测试必须用 cua/Playwright 真实点击**（el.click() 缺指针序列会静默无效） |
 | 定时 | 业务定时全部在 DSH 原生 schedule（晨报/日报/Watchdog/周复盘，代码零 cron）；Source 只做 dws 轮询 diff（30min）。**三层分工**：任务 prompt 只写指令（薄引用 runbook §N）｜人格在 preset `persona.prefix`（补丁分发，零维护）｜规则在 runbook。**target 治理走程序化路径**：API target 有 `session`（固定已有会话）/`new_once`/`new` 三种，UI 只暴露后两个——**新增/改靶/删除用 `pnpm sun:schedule`（scripts/schedule-cli.mjs：list/add/retarget/rm，target 自动绑 state.json 解析出的当前 Router 会话，实测全通过）**；UI 面板用于查看/启停/改时间 |
+| **孙学空间引导（v17）** | 两步启用（①插件确认 ②一键初始化：Router 会话 + 知识库，sun_vault_write 零审批）+ 补建骨架兜底 + 定时模板速建；vault 根四级解析：SUN_VAULT → config.json → **Router 会话 cwd 自动登记** → 约定路径 |
+| **发版方式** | GitHub Release 驱动：`npm version patch && git push --tags` → CI 自动 npm 发布 + gh release create（自动更新日志）；仓库工作流权限已设 read-write（GITHUB_TOKEN 建 Release 需要） |
 | **Worker 实时看门狗** | `worker-watchdog.ts`（全局 scope，事件冒泡）：盯 sun-worker 委派子代理，`tools/post-execute` 刷新计时，无活动 >15 分钟（`SUN_WATCHDOG_STALL_MS` 可调/`SUN_WATCHDOG_DISABLED=1` 关闭）→ trigger 落盘 + urgent 通知 + interrupt 停掉 → settled 唤醒 Router。与 Watchdog 定时巡检互补：实时救火 + 定时清点。E2E 已验证（stall 触发→Router 被唤醒转述"被中途停止"） |
 | Worker 跨目录 | `sun_route` 可选 `cwd`（绝对路径，如仓库根）——沙箱可写区**自动跟随会话 cwd**（patch 里 `workspaceRoot` 只是无 cwd 时的兜底）；产物落库仍走 `sun_artifact_write`（vault 绝对路径，与 cwd 无关） |
 | 初始化检查 | 三行检查（①vault ②依赖插件 ③Router 会话）**三项全绿才进看板**（只缺 ③ 也要出面板）；① 需要 ③ 的会话作 workspaceFiles scope；agentPresets/list 参数为**空 args** |
