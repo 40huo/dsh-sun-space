@@ -60,3 +60,10 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         working-directory: sun-space
         run: npm publish --provenance --access public
+      - name: Create GitHub Release（自动更新日志）
+        if: steps.check.outputs.skip != 'true' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./sun-space/package.json').version")"
+          gh release create "v$VERSION" --verify-tag --generate-notes --latest --title "v$VERSION"
