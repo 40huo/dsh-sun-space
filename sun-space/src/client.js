@@ -19,11 +19,11 @@ window.__ModuleLoader__.load({
       const PANEL_ID = 'sun-space'
       const VAULT_DIRNAME = 'sun-vault' // vault 目录名约定；绝对路径动态发现，见 resolveVault
       // 架构 §4.1 不变量：呈现层不得持有会话 id / vault 绝对路径常量（Router 会话会轮换，机器会换）。
-      // 会话解析链：session/list（sun-router 会话）→ 90-Meta/system/state.json 裁决 → updatedAt 最新兜底。
+      // 会话解析链：session/list（sun-router 会话）→ 插件状态 vaults[].router 裁决（过渡期兜底旧 vault 内 state.json）→ updatedAt 最新。
       // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
       // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v22' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v23' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -98,10 +98,16 @@ window.__ModuleLoader__.load({
       }).then(v => v.text || '')
 
       // ===== vault 绝对路径发现（跨机器；呈现层不持常量，架构 §4.1 同款不变量）=====
-      // 链：会话 cwd 推 HOME → 约定布局 <HOME>/Workspace/sun-vault 探测 state.json → state.json.vault 字段裁决。
-      // state.json 由 Router 自登记/晨报自检维护（server 端解析链是唯一事实源）；
-      // workspaces 分桶映射优先（一桶一 vault，多实例互不污染，与 server ④ 级一致）。
+      // 链：插件状态目录（config.json → state.json 的 vaults 登记/全局镜像）→ 会话 cwd 骨架 → 约定布局。
+      // server 端 vault-path.ts 是唯一事实源；vaults 一库一条 {dir, router?}（v0.3.5，旧 workspaces 读兼容）。
       // items 可选：调用方已取过 session/list 时复用（免重复 RPC）。
+      const vaultEntriesOf = (st) => {
+        const out = []
+        for (const e of (st?.vaults ?? [])) if (typeof e?.dir === 'string' && e.dir.startsWith('/')) out.push(e)
+        for (const k of Object.keys(st?.workspaces ?? {})) if (k.startsWith('/') && !out.some(x => x.dir === k)) out.push({ dir: k })
+        return out
+      }
+      const homesOf = (items) => [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
       async function resolveVault(itemsIn, currentSessionId) {
         let items = itemsIn
         if (!items) {
@@ -113,14 +119,13 @@ window.__ModuleLoader__.load({
         const myCwd = currentSessionId ? String((items.find(s => s.sessionId === currentSessionId) ?? {}).cwd ?? '') : ''
         // ① 插件状态目录（HOME 从会话 cwd 推导，绝对路径读取）：
         //    config.json 优先（运行期事实源——引导初始化/用户手写即时生效），state.json 兜底（启动期快照）
-        const homes = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')).map(c => c.split('/').slice(0, 3).join('/')))]
+        const homes = homesOf(items)
         for (const home of homes) {
           for (const file of ['config.json', 'state.json']) {
             try {
               const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/${file}`, 8)
               const st = JSON.parse(raw)
-              const mapped = myCwd.startsWith('/') ? st?.workspaces?.[myCwd] : undefined // 分桶登记（本工作区）
-              if (typeof mapped === 'string' && mapped.startsWith('/')) return mapped
+              if (myCwd.startsWith('/') && vaultEntriesOf(st).some(e => e.dir === myCwd)) return myCwd // 分桶登记（本工作区）
               if (st?.vault && st.vault.startsWith('/')) return st.vault
             } catch { /* 该文件不存在 → 下一个 */ }
           }
@@ -134,21 +139,19 @@ window.__ModuleLoader__.load({
             return cwd
           }
         } catch { /* 该 cwd 无 90-Meta → 约定兜底 */ }
-        // ③ 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①覆盖）
+        // ③ 约定布局探测（默认 ~/Workspace/sun-vault；自定义 vault 路径由①config.json 覆盖）
         const candidates = [...new Set(homes.map(h => `${h}/Workspace/${VAULT_DIRNAME}`))]
         for (const cand of candidates) {
           try {
-            const raw = await readVaultFile(scope, `${cand}/90-Meta/system/state.json`, 8)
-            const st = JSON.parse(raw)
-            if (st?.vault && st.vault.startsWith('/')) return st.vault // state.json 裁决（可能与约定布局不同盘/路径）
+            await readVaultFile(scope, `${cand}/90-Meta/runbook.md`, 2)
             D.vaultFoundNoField = cand
-            return cand // 布局命中但 state.json 尚无 vault 字段（旧种子）——先按布局用，晨报自检会补字段
+            return cand // 布局命中（骨架在即认定；旧 vault 内 system/state.json 已废弃，不再作裁决源）
           } catch { /* 该候选不存在 → 下一个 */ }
         }
         return null
       }
 
-      // ===== Router 会话解析（架构 §4.1 不变量：会话会轮换，呈现层只认 vault state.json + 动态发现）=====
+      // ===== Router 会话解析（架构 §4.1 不变量：会话会轮换，呈现层只认登记状态 + 动态发现）=====
       async function resolveRouterSession(vault, items) {
         if (!items) {
           const v = await gw('session/list', {})
@@ -157,7 +160,16 @@ window.__ModuleLoader__.load({
         // 注意：cwd 是"工作区分桶路径"（实例 boot cwd），不是 vault——过滤只看预设（踩坑 5 延伸）
         const candidates = items.filter(s => s?.projections?.values?.agentPreset === 'sun-router')
         if (!candidates.length) return null
-        // state.json 裁决：指向列表内现存会话者胜（轮换后旧会话仍在列表里，state 是唯一事实源）
+        // ① 插件状态 vaults[].router 裁决（v0.3.5 唯一登记点；指向列表内现存会话者胜）
+        const scope = candidates[0].sessionId
+        for (const home of homesOf(items)) {
+          try {
+            const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/state.json`, 8)
+            const hit = vaultEntriesOf(JSON.parse(raw)).find(e => typeof e.router === 'string' && candidates.some(c => c.sessionId === e.router))
+            if (hit) return hit.router
+          } catch { /* 无该文件 → 下一个 */ }
+        }
+        // ② 过渡期兜底：旧 vault 内 90-Meta/system/state.json（v0.3.5 前自登记；已部署定时/runbook 仍可能写它）
         for (const s of candidates) {
           try {
             const raw = await readVaultFile(s.sessionId, `${vault}/90-Meta/system/state.json`, 8)
@@ -165,7 +177,7 @@ window.__ModuleLoader__.load({
             if (st?.routerSession && candidates.some(c => c.sessionId === st.routerSession)) return st.routerSession
           } catch { /* 无 state.json 或不可读 → 走兜底 */ }
         }
-        // 兜底：最近活跃者（多 sun-router 并存时，列表顺序不可依赖）
+        // ③ 兜底：最近活跃者（多 sun-router 并存时，列表顺序不可依赖）
         candidates.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
         return candidates[0].sessionId
       }
@@ -197,7 +209,7 @@ window.__ModuleLoader__.load({
         } else if (!vault) {
           c.notes.push(c.currentCwd
             ? `未找到既有知识库——当前工作区 ${c.currentCwd} 将作为知识库根（待初始化）：完成下方初始化引导即可`
-            : `未找到知识库目录：按约定应在 <用户目录>/Workspace/${VAULT_DIRNAME}（含 90-Meta/system/state.json）；自定义位置需由 Router 把绝对路径写进 state.json 的 vault 字段`)
+            : `未找到知识库目录：按约定应在 <用户目录>/Workspace/${VAULT_DIRNAME}（含 90-Meta 骨架）；自定义位置在 ~/.dsh/state/sun-space/config.json 写 {"vault": "绝对路径"}`)
         } else {
           c.notes.push('知识库检查需要会话作读取通道 → 先创建会话')
         }
@@ -227,7 +239,7 @@ window.__ModuleLoader__.load({
           c.routerSession = vault ? await resolveRouterSession(vault, items) : null
           // 当前会话即 Sun Router → 直接认领（vault 尚未定位/登记缺失时也不另建会话——复用优先）
           if (!c.routerSession && c.currentPreset === 'sun-router') c.routerSession = currentSessionId
-          if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
+          if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记')
         } catch {
           c.notes.push('会话列表不可达 → 重试或检查实例')
         }
@@ -324,7 +336,7 @@ window.__ModuleLoader__.load({
    - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律：Journal 由 Router 独占、日期一律本地时间 YYYY-MM-DDTHH:mm 不带时区后缀、结论必注出处）
    - 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：IM ≤100 字结论先行 + §3 打扰分级：info 攒批/ask 立即/urgent 加 DING）
    - 90-Meta/memory.md：初始版（# 关于用户，待填充）
-3) 用 sun_vault_write 写 90-Meta/system/state.json：{"routerSession": "${sid}", "vault": "<知识库根绝对路径——填第 2 步 sun_vault_write 返回的 vault 值>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm>"}（自登记，供孙学空间发现与轮换机制使用）
+3) 用 sun_state_write 把本会话登记为该知识库的当前 Router（参数 {"router": true}——孙学空间发现与轮换的唯一登记点，勿手写任何状态文件）
 4) 完成后列出生成的文件清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
@@ -341,12 +353,11 @@ window.__ModuleLoader__.load({
             sessionId: routerSession,
             mode: 'queue',
             content: [{ type: 'text', text: `【知识库骨架补建 + vault 根登记】按顺序完成：
-1) 用 sun_state_write 登记本工作区为 vault 根（参数 {"vault": true}——分桶登记，零审批，不影响其他工作区；值由系统从你的会话上下文派生。若 ok:false 按注记处理，禁止用 shell 手写状态目录）
+1) 用 sun_state_write 登记本工作区与本人（参数 {"vault": true}——分桶登记，零审批，不影响其他工作区，值由系统从你的会话上下文派生，若 ok:false 按注记处理，禁止用 shell 手写状态目录；随后 {"router": true} 把本会话登记为该知识库的当前 Router）
 2) 用 sun_vault_write 创建/补全知识库骨架（实际根以工具返回的 vault 字段为准，勿凭工作目录猜测）：
    - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律同 runbook）
    - 90-Meta/runbook.md：若缺失则写初始版（# Sun 行为手册 + v0.1）
    - 90-Meta/memory.md：若缺失则写初始版（# 关于用户）
-   - 90-Meta/system/state.json：{"routerSession": "${routerSession}", "vault": "<第 2 步 sun_vault_write 返回的 vault 值>", "updatedAt": "<本地时间 YYYY-MM-DDTHH:mm 无时区后缀>"}（已有的话合并更新 routerSession/vault 字段）
 完成后报告清单与知识库路径。` }],
             clientTimeZone: 'Asia/Shanghai',
           })
@@ -377,9 +388,9 @@ window.__ModuleLoader__.load({
 
       // 四条生产预设：一键预填表单（新机器启用的最后一公里）
       const SCHEDULE_TEMPLATES = [
-        { label: '晨报 08:45', title: 'Sun 晨间简报', cron: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记（sun_vault_meta 流转状态）→ sun_notify(ask) 推送摘要请我确认。触发队列里 sys-onboarding-guide 类待办按 runbook §6 过滤。自检兜底：若 90-Meta/system/state.json 的 routerSession/vault 字段与本会话环境不符 → sun_vault_write(overwrite) 修正。' },
+        { label: '晨报 08:45', title: 'Sun 晨间简报', cron: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记（sun_vault_meta 流转状态）→ sun_notify(ask) 推送摘要请我确认。触发队列里 sys-onboarding-guide 类待办按 runbook §6 过滤。自检兜底：sun_state_read 核对 resolvedVault 与 vaults 登记的 router 是否为本会话 → 不符则 sun_state_write {"router": true} 修正。' },
         { label: '日报 18:30', title: 'Sun 日报', cron: '30 18 * * 1-5', prompt: '【定时 · 日报】按 runbook §7 执行日报：sun_read(tasks/journal/note full) 汇总当日任务 → 日报追加到 40-Journal/当日.md（今日完成/未完成与原因/明日建议，保持 status=draft）→ sun_notify(ask) 请求审核。' },
-        { label: 'Watchdog 14/21 点', title: 'Sun Watchdog 巡检', cron: '0 14,21 * * 1-5', prompt: '【定时 · Watchdog 巡检】按 runbook §3 分级巡检，quiet by default——一切正常则不发任何通知。检查：①running 超 2h → urgent+重派建议 ②need-confirm 超 2h → urgent 重推 ③工作日缺晨报/日报小节 → 按 §5/§7 补跑 ④核对 90-Meta/system/state.json 的 routerSession/vault 字段，不符则修正。' },
+        { label: 'Watchdog 14/21 点', title: 'Sun Watchdog 巡检', cron: '0 14,21 * * 1-5', prompt: '【定时 · Watchdog 巡检】按 runbook §3 分级巡检，quiet by default——一切正常则不发任何通知。检查：①running 超 2h → urgent+重派建议 ②need-confirm 超 2h → urgent 重推 ③工作日缺晨报/日报小节 → 按 §5/§7 补跑 ④sun_state_read 核对当前生效知识库与 router 登记，不符则 sun_state_write {"router": true} 修正。' },
         { label: '周复盘 周五 17:00', title: 'Sun 周复盘', cron: '0 17 * * 5', prompt: '【定时 · 周复盘】生成 90-Meta/reflections/当周.md（frontmatter: type reflection/status draft/week/本地时间戳）：§本周概览含派发预算执行 §做得好/不好各≤3 §runbook 修订建议 diff §下周关注含轮换触发线检视 → 周报以「## 周复盘」追加 Journal（status=draft）→ sun_notify(ask) 请求审核，人审后 diff 生效。' },
       ]
 

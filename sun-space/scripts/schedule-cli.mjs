@@ -21,6 +21,12 @@ const LOG = process.env.SUN_DSH_LOG ?? '/tmp/sun-dsh-web.log' // 实例 launch �
 // ①SUN_VAULT ②config.json（全局显式）③state.json workspaces 分桶映射 ④桶目录自带 90-Meta 骨架 ⑤约定路径
 const stateSpace = `${process.env.DSH_HOME ?? process.env.HOME}/.dsh/state/sun-space`
 function readJsonSafe(p) { try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return null } }
+// 归一化 vault 登记条目（新 vaults 数组 + 旧 workspaces 读兼容，与插件/工作台同款）
+function vaultEntries(st) {
+  const out = Array.isArray(st?.vaults) ? st.vaults.filter(e => typeof e?.dir === 'string' && e.dir.startsWith('/')) : []
+  for (const k of Object.keys(st?.workspaces ?? {})) if (k.startsWith('/') && !out.some(x => x.dir === k)) out.push({ dir: k })
+  return out
+}
 async function resolveVault(cookie, items) {
   if (process.env.SUN_VAULT) return process.env.SUN_VAULT
   const cfg = readJsonSafe(`${stateSpace}/config.json`)
@@ -30,7 +36,7 @@ async function resolveVault(cookie, items) {
     const mapped = readJsonSafe(`${stateSpace}/state.json`)?.workspaces?.[bucket]
     if (typeof mapped === 'string' && mapped.startsWith('/')) return mapped
     try { // 桶目录自带骨架（新机工作区初始化流：vault 就在桶目录里）
-      await rpc(cookie, 'workspaceFiles/read', { workspaceFileScopeId: items[0].sessionId, path: `${bucket}/90-Meta/system/state.json`, range: { limit: 2 } })
+      await rpc(cookie, 'workspaceFiles/read', { workspaceFileScopeId: items[0].sessionId, path: `${bucket}/90-Meta/runbook.md`, range: { limit: 2 } })
       return bucket
     } catch { /* 无骨架 → 约定兜底 */ }
   }
@@ -66,6 +72,10 @@ async function resolveRouterSession(cookie) {
   const candidates = items.filter(s => s?.projections?.values?.agentPreset === 'sun-router')
   if (!candidates.length) throw new Error('没有 sun-router 预设会话（先在工作台创建）')
   const VAULT = await resolveVault(cookie, items)
+  // ① 插件状态 vaults[].router 裁决（v0.3.5 唯一登记点）
+  const hit = vaultEntries(readJsonSafe(`${stateSpace}/state.json`)).find(e => typeof e.router === 'string' && candidates.some(c => c.sessionId === e.router))
+  if (hit) return { sessionId: hit.router, source: '插件状态 vaults.router' }
+  // ② 过渡期兜底：旧 vault 内 90-Meta/system/state.json（v0.3.5 前自登记）
   for (const s of candidates) {
     try {
       const v = await rpc(cookie, 'workspaceFiles/read', {
@@ -73,10 +83,11 @@ async function resolveRouterSession(cookie) {
       })
       const st = JSON.parse(v?.text || '{}')
       if (st?.routerSession && candidates.some(c => c.sessionId === st.routerSession)) {
-        return { sessionId: st.routerSession, source: 'state.json' }
+        return { sessionId: st.routerSession, source: 'vault 内 state.json（旧）' }
       }
     } catch { /* 无 state.json → 兜底 */ }
   }
+  // ③ updatedAt 最新
   candidates.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
   return { sessionId: candidates[0].sessionId, source: 'updatedAt 兜底' }
 }

@@ -12,7 +12,14 @@ import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
 
-import { cwdIsVaultCandidate, readStateSnapshot, registerVaultRootFromSession, vaultPath } from './vault-path'
+import { cwdIsVaultCandidate, readStateSnapshot, registerVaultRootFromSession, setRouterSession, vaultPath } from './vault-path'
+
+/** 从工具执行上下文提取本会话 id（sun_state_write {"router":true} 用）。防御式：形状未知时返回 undefined。 */
+function sessionIdOf(exec: unknown): string | undefined {
+  const e = exec as { agent?: { id?: unknown; session?: { id?: unknown; header?: { id?: unknown } } } } | undefined
+  const id = e?.agent?.session?.header?.id ?? e?.agent?.session?.id ?? e?.agent?.id
+  return typeof id === 'string' && id.startsWith('session-') ? id : undefined
+}
 
 /** 从工具执行上下文提取会话工作目录（用户在哪个工作区开会话，vault 就解析到哪）。防御式：形状未知时返回 undefined。 */
 function sessionCwdOf(exec: unknown): string | undefined {
@@ -145,7 +152,7 @@ export function apply(ctx: Context) {
         await mkdir(join(p, '..'), { recursive: true })
         if (args.mode === 'append') await appendFile(p, args.content, 'utf8')
         else await writeFile(p, args.content, 'utf8')
-        // vault 字段回显实际解析根：初始化指令据此写 90-Meta/system/state.json，勿凭工作目录猜测
+        // vault 字段回显实际解析根：初始化指令据此核对/报告知识库根，勿凭工作目录猜测
         return { ok: true, data: { path: args.path, vault: root, bytes: Buffer.byteLength(args.content) } }
       } catch (e) {
         if (e instanceof VaultPathError) return { ok: false, note: `路径被拒绝: ${e.message}` }
@@ -230,7 +237,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(def(
     'sun_state_read',
-    '读取插件状态目录（~/.dsh/state/sun-space/）的登记与解析视图：config（用户手写 vault 覆盖）、state（workspaces 分桶登记 + 全局 vault 镜像）、resolvedVault（本会话实际生效的知识库根）。vault 解析诊断 / 晨报自检"登记 vs 生效"比对用。',
+    '读取插件状态目录（~/.dsh/state/sun-space/）的登记与解析视图：config（用户手写 vault 覆盖）、state（vaults 分桶登记 {dir, router?} + 全局 vault 镜像）、resolvedVault（本会话实际生效的知识库根）。vault 解析诊断 / 晨报自检"登记 vs 生效"比对用。',
     { type: 'object', properties: {} },
     async (_args: Record<string, never>, exec?: unknown) => {
       try {
@@ -243,25 +250,43 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(def(
     'sun_state_write',
-    '把当前会话工作目录登记为本工作区的 vault 根（state.json 的 workspaces 分桶映射——一桶一 vault，不影响其他工作区/实例；仅空目录或已含 90-Meta 骨架的目录可登记）。零审批。用于：插件升级前创建的旧会话迁移、登记缺失自愈。值由系统从会话上下文派生，只接受 vault:true，不接受路径参数。',
+    '插件状态登记（~/.dsh/state/sun-space/，零审批，值由系统从会话上下文派生，不接受手工传路径/id）：{"vault": true} 把当前会话工作目录登记为本工作区的 vault 根（仅空目录或已含 90-Meta 骨架的目录可登记；一桶一 vault 不影响其他工作区）；{"router": true} 把本会话登记为该知识库的当前 Router（轮换/自检修正的落点，v0.3.5 起替代 vault 内 90-Meta/system/state.json 自登记）。二者可各用一次。',
     {
       type: 'object',
-      properties: { vault: { type: 'boolean', description: '登记本会话工作目录为 vault 根（唯一合法值 true）' } },
-      required: ['vault'],
+      properties: {
+        vault: { type: 'boolean', description: '登记本会话工作目录为 vault 根（唯一合法值 true）' },
+        router: { type: 'boolean', description: '登记本会话为该知识库的当前 Router（唯一合法值 true）' },
+      },
     },
-    async (args: { vault?: boolean }, exec?: unknown) => {
-      if (args.vault !== true) return { ok: false, note: '仅接受 vault:true——登记值由系统从会话上下文派生，不接受手工传路径' }
+    async (args: { vault?: boolean; router?: boolean }, exec?: unknown) => {
       const cwd = sessionCwdOf(exec)
-      if (!cwd) return { ok: false, note: '无法从会话上下文提取工作目录（绝对路径）' }
-      if (process.env.SUN_VAULT?.trim()) return { ok: false, note: `SUN_VAULT 已显式钉死（${process.env.SUN_VAULT}），不登记——尊重显式覆盖` }
-      if (!cwdIsVaultCandidate(cwd)) return { ok: false, note: `${cwd} 不是 vault 候选（须为空目录或已含 90-Meta 骨架）——有内容而无骨架的工作区目录不登记` }
-      try {
-        const changed = registerVaultRootFromSession(cwd) // false = 同桶已登记（幂等）
-        const snap = readStateSnapshot(cwd)
-        return { ok: true, data: { bucket: cwd, registered: snap.state?.workspaces?.[cwd] ?? null, changed, resolvedVault: snap.resolvedVault } }
-      } catch (e) {
-        return { ok: false, note: String((e as Error).message).slice(0, 200) }
+      if (args.router === true) {
+        if (!cwd) return { ok: false, note: '无法从会话上下文提取工作目录（绝对路径）' }
+        const sid = sessionIdOf(exec)
+        if (!sid) return { ok: false, note: '无法从会话上下文提取本会话 id' }
+        try {
+          const changed = setRouterSession(cwd, sid) // false = 同会话已登记（幂等）
+          const snap = readStateSnapshot(cwd)
+          const entry = snap.state?.vaults?.find(e => e.dir === cwd) ?? null
+          return { ok: true, data: { bucket: cwd, router: entry?.router ?? null, changed, resolvedVault: snap.resolvedVault } }
+        } catch (e) {
+          return { ok: false, note: String((e as Error).message).slice(0, 200) }
+        }
       }
+      if (args.vault === true) {
+        if (!cwd) return { ok: false, note: '无法从会话上下文提取工作目录（绝对路径）' }
+        if (process.env.SUN_VAULT?.trim()) return { ok: false, note: `SUN_VAULT 已显式钉死（${process.env.SUN_VAULT}），不登记——尊重显式覆盖` }
+        if (!cwdIsVaultCandidate(cwd)) return { ok: false, note: `${cwd} 不是 vault 候选（须为空目录或已含 90-Meta 骨架）——有内容而无骨架的工作区目录不登记` }
+        try {
+          const changed = registerVaultRootFromSession(cwd) // false = 同桶已登记（幂等）
+          const snap = readStateSnapshot(cwd)
+          const entry = snap.state?.vaults?.find(e => e.dir === cwd) ?? null
+          return { ok: true, data: { bucket: cwd, registered: entry !== null, changed, resolvedVault: snap.resolvedVault } }
+        } catch (e) {
+          return { ok: false, note: String((e as Error).message).slice(0, 200) }
+        }
+      }
+      return { ok: false, note: '参数须为 {"vault": true} 或 {"router": true}——登记值由系统从会话上下文派生' }
     },
   ))
 
