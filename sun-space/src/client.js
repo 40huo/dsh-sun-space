@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
       // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
       // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v20' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v21' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -85,6 +85,7 @@ window.__ModuleLoader__.load({
         'session/list': a => ({ _request: a ?? {} }),
         'session/create': a => ({ request: a }),
         'session/prompt': a => ({ request: a }),
+        'workspace/create': a => ({ request: a }),
         'schedule/list': a => ({ request: a ?? {} }),
         'schedule/create': a => ({ request: a }),
         'schedule/edit': a => ({ request: a }),
@@ -229,8 +230,17 @@ window.__ModuleLoader__.load({
       }
 
       async function createRouterSession(cwd) {
-        // cwd 可选：一键初始化时传当前会话的工作区目录——Router 会话落在用户选的工作区
-        //（session/create 带 cwd 还会自动注册该工作区）；不传则随宿主项目目录（踩坑 5）
+        // cwd 可选：一键初始化时传当前会话的工作区目录——Router 会话落在用户选的工作区。
+        // 落位两步（踩坑 12：session/create 只传 cwd 只设会话目录、不入工作区 sessionIds → 未分组）：
+        // ① workspace/create 幂等解析目录 → workspaceId（工作区不存在则注册）
+        // ② session/create 传 workspaceId（宿主只在 workspaceId 路径上 attachSession 入组）
+        if (cwd && cwd.startsWith('/')) {
+          try {
+            const w = await gw('workspace/create', { path: cwd })
+            const wid = w?.workspace?.workspaceId
+            if (wid) return gw('session/create', { workspaceId: wid, agentPreset: 'sun-router' })
+          } catch (e) { D.errors.push('workspace/create: ' + String(e?.message ?? e)) } // 解析失败 → 落回 cwd 路径
+        }
         return gw('session/create', cwd ? { cwd, agentPreset: 'sun-router' } : { agentPreset: 'sun-router' })
       }
 
