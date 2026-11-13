@@ -16,15 +16,26 @@
 import { readFileSync, existsSync } from 'node:fs'
 
 const BASE = 'http://127.0.0.1:3081'
-const LOG = '/tmp/sun-dsh-web.log'
-// vault 解析与插件同源：①SUN_VAULT ②~/.dsh/state/sun-space/config.json（用户手写覆盖）③约定路径
-const configVault = (() => {
-  try {
-    const v = JSON.parse(readFileSync(`${process.env.DSH_HOME ?? process.env.HOME}/.dsh/state/sun-space/config.json`, 'utf8')).vault
-    return typeof v === 'string' && v.startsWith('/') ? v : undefined
-  } catch { return undefined }
-})()
-const VAULT = process.env.SUN_VAULT ?? configVault ?? `${process.env.HOME}/Workspace/sun-vault`
+const LOG = process.env.SUN_DSH_LOG ?? '/tmp/sun-dsh-web.log' // 实例 launch 日志（多实例时用 SUN_DSH_LOG 指向对应日志）
+// vault 解析与插件同源（vault-path.ts 六级链的脚本镜像）：
+// ①SUN_VAULT ②config.json（全局显式）③state.json workspaces 分桶映射 ④桶目录自带 90-Meta 骨架 ⑤约定路径
+const stateSpace = `${process.env.DSH_HOME ?? process.env.HOME}/.dsh/state/sun-space`
+function readJsonSafe(p) { try { return JSON.parse(readFileSync(p, 'utf8')) } catch { return null } }
+async function resolveVault(cookie, items) {
+  if (process.env.SUN_VAULT) return process.env.SUN_VAULT
+  const cfg = readJsonSafe(`${stateSpace}/config.json`)
+  if (typeof cfg?.vault === 'string' && cfg.vault.startsWith('/')) return cfg.vault
+  const bucket = [...new Set(items.map(s => String(s.cwd || '')).filter(c => c.startsWith('/')))][0]
+  if (bucket) {
+    const mapped = readJsonSafe(`${stateSpace}/state.json`)?.workspaces?.[bucket]
+    if (typeof mapped === 'string' && mapped.startsWith('/')) return mapped
+    try { // 桶目录自带骨架（新机工作区初始化流：vault 就在桶目录里）
+      await rpc(cookie, 'workspaceFiles/read', { workspaceFileScopeId: items[0].sessionId, path: `${bucket}/90-Meta/system/state.json`, range: { limit: 2 } })
+      return bucket
+    } catch { /* 无骨架 → 约定兜底 */ }
+  }
+  return `${process.env.HOME}/Workspace/sun-vault`
+}
 
 function fail(msg) { console.error('❌ ' + msg); process.exit(1) }
 
@@ -54,6 +65,7 @@ async function resolveRouterSession(cookie) {
   const items = (await rpc(cookie, 'session/list', { _request: {} }))?.items ?? []
   const candidates = items.filter(s => s?.projections?.values?.agentPreset === 'sun-router')
   if (!candidates.length) throw new Error('没有 sun-router 预设会话（先在工作台创建）')
+  const VAULT = await resolveVault(cookie, items)
   for (const s of candidates) {
     try {
       const v = await rpc(cookie, 'workspaceFiles/read', {
