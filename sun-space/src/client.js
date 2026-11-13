@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
       // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
       // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v21' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v22' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -172,7 +172,7 @@ window.__ModuleLoader__.load({
 
       // ===== 初始化检查（在任何会话的 tab 上都能跑；① 用当前会话作 workspaceFiles scope）=====
       async function runInitChecks(currentSessionId) {
-        const c = { vault: false, presets: false, routerSession: null, vaultPath: null, currentCwd: null, notes: [] }
+        const c = { vault: false, presets: false, routerSession: null, vaultPath: null, currentCwd: null, currentPreset: null, notes: [] }
         // 会话列表只取一次：currentCwd 供 ① 跨工作区提示与一键初始化，router 解析复用
         let items = null
         try {
@@ -220,8 +220,13 @@ window.__ModuleLoader__.load({
             const sl = await gw('session/list', {})
             items = Array.isArray(sl?.items) ? sl.items : Object.values(sl?.items ?? {})
           }
+          // 当前会话预设（复用判定：用户建会话时手选了 Sun Router → 初始化直接用本会话，不另建）
+          const cur = items.find(s => s.sessionId === currentSessionId) ?? {}
+          c.currentPreset = cur.projections?.values?.agentPreset ?? null
           // vault 根登记由宿主插件在 sun-router 会话创建时自动完成（index.ts agent/created 钩子）
           c.routerSession = vault ? await resolveRouterSession(vault, items) : null
+          // 当前会话即 Sun Router → 直接认领（vault 尚未定位/登记缺失时也不另建会话——复用优先）
+          if (!c.routerSession && c.currentPreset === 'sun-router') c.routerSession = currentSessionId
           if (!c.routerSession) c.notes.push('Router 会话不存在 → 点下方「创建 Router 会话」（sun-router 预设，随当前工作区），创建后自动登记 state.json')
         } catch {
           c.notes.push('会话列表不可达 → 重试或检查实例')
@@ -460,8 +465,12 @@ window.__ModuleLoader__.load({
       function OnboardPanel({ checks, currentSessionId, onRetry }) {
         const steps = [
           { n: 1, ok: checks.presets, title: '确认依赖插件', desc: checks.presets ? '智能体协作 / 子智能体插件已启用' : '打开插件面板，启用 sun-space / 智能体协作相关插件后重启实例', action: checks.presets ? null : 'plugins' },
-          { n: 2, ok: !!checks.routerSession, title: '一键初始化（Router 会话 + 知识库）', desc: checks.routerSession ? `已就绪：${checks.routerSession.slice(0, 28)}…` : `一键完成：以当前工作区目录${checks.currentCwd ? `（${checks.currentCwd}）` : ''}为知识库根 → 创建 Router 会话 → 写入 90-Meta 骨架 → 分桶自登记（全程零审批）`, action: checks.presets && !checks.routerSession ? 'create-router' : null },
-          { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : (checks.routerSession ? '知识库骨架缺失 → 点下方按钮让 Router 补建' : '完成第②步后自动创建'), action: checks.presets && checks.routerSession && !checks.vault ? 'init-skeleton' : null },
+          { n: 2, ok: !!checks.routerSession, title: '一键初始化（Router 会话 + 知识库）', desc: checks.routerSession
+            ? `已就绪：${checks.routerSession.slice(0, 28)}…${checks.routerSession === currentSessionId ? '（当前会话）' : ''}`
+            : `一键完成：以当前工作区目录${checks.currentCwd ? `（${checks.currentCwd}）` : ''}为知识库根 → 创建 Router 会话 → 写入 90-Meta 骨架 → 分桶自登记（全程零审批）${checks.currentPreset && checks.currentPreset !== 'sun-router' ? `。当前会话是 ${checks.currentPreset} 预设，初始化将新建 Router 会话；想直接复用：新建会话时在模式选择器选「Sun Router」` : ''}`, action: checks.presets && !checks.routerSession ? 'create-router' : null },
+          { n: 3, ok: checks.vault, title: '知识库就绪', desc: checks.vault ? `已就绪：${checks.vaultPath}` : (checks.routerSession
+            ? (checks.routerSession === currentSessionId ? '当前会话即 Sun Router——点下方按钮直接在本会话初始化知识库' : '知识库骨架缺失 → 点下方按钮让 Router 补建')
+            : '完成第②步后自动创建'), action: checks.presets && checks.routerSession && !checks.vault ? 'init-skeleton' : null },
         ]
         const allOk = steps.every(x => x.ok)
         return h('div', null, [
@@ -475,7 +484,7 @@ window.__ModuleLoader__.load({
             ]),
             st.action === 'plugins' ? h('button', { key: 'a', onClick: () => { try { hostCtx.layout.selectPanel('plugins') } catch (e) { D.errors.push(String(e)) } }, style: btnStyle }, '打开插件面板') : null,
             st.action === 'create-router' ? h('button', { key: 'a', onClick: () => createRouterAndInit(checks, onRetry), style: btnStyle }, '一键初始化') : null,
-            st.action === 'init-skeleton' ? h('button', { key: 'a', onClick: () => initSkeletonOnRouter(checks.routerSession, onRetry), style: btnStyle }, '补建知识库骨架') : null,
+            st.action === 'init-skeleton' ? h('button', { key: 'a', onClick: () => initSkeletonOnRouter(checks.currentPreset === 'sun-router' ? currentSessionId : checks.routerSession, onRetry), style: btnStyle }, checks.currentPreset === 'sun-router' ? '初始化知识库（本会话）' : '补建知识库骨架') : null,
 
           ])),
           allOk ? h('p', { key: 'done', style: { color: '#57b26a', fontSize: 13 } }, '✓ 全部就绪——到「定时任务」用模板创建晨报等四条生产任务，即可开始使用。') : null,
