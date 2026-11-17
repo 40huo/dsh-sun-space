@@ -334,7 +334,7 @@ window.__ModuleLoader__.load({
 1) 用 sun_state_write 确认/补全本工作区的 vault 根登记（参数 {"vault": true}——会话创建时已自动登记，此步幂等自愈；若 ok:false 按注记处理）
 2) 用 sun_vault_write 创建知识库骨架（实际根以工具返回的 vault 字段为准，勿凭工作目录猜测）：
    - 90-Meta/schemas.md：frontmatter 契约最小集（通用字段 type/id/status/created/updated；task 的 status 枚举 proposed|running|need-confirm|done|blocked|dropped；写入纪律：Journal 由 Router 独占、日期一律本地时间 YYYY-MM-DDTHH:mm 不带时区后缀、结论必注出处）
-   - 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：IM ≤100 字结论先行 + §3 打扰分级：info 攒批/ask 立即/urgent 加 DING）
+   - 90-Meta/runbook.md：初始版（# Sun 行为手册 + v0.1 版本行 + §1 角色：Router 只分派不执行 + §2 沟通规范：结论先行 ≤100 字 + §3 打扰分级：info 写 Journal 攒批/ask 与 urgent 用决策卡——浏览器通知由通知类插件负责）
    - 90-Meta/memory.md：初始版（# 关于用户，待填充）
 3) 用 sun_state_write 把本会话登记为该知识库的当前 Router（参数 {"router": true}——孙学空间发现与轮换的唯一登记点，勿手写任何状态文件）
 4) 完成后列出生成的文件清单与知识库路径。` }],
@@ -388,10 +388,10 @@ window.__ModuleLoader__.load({
 
       // 四条生产预设：一键预填表单（新机器启用的最后一公里）
       const SCHEDULE_TEMPLATES = [
-        { label: '晨报 08:45', title: 'Sun 晨间简报', cron: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记（sun_vault_meta 流转状态）→ sun_notify(ask) 推送摘要请我确认。触发队列里 sys-onboarding-guide 类待办按 runbook §6 过滤。自检兜底：sun_state_read 核对 resolvedVault 与 vaults 登记的 router 是否为本会话 → 不符则 sun_state_write {"router": true} 修正。' },
-        { label: '日报 18:30', title: 'Sun 日报', cron: '30 18 * * 1-5', prompt: '【定时 · 日报】按 runbook §7 执行日报：sun_read(tasks/journal/note full) 汇总当日任务 → 日报追加到 40-Journal/当日.md（今日完成/未完成与原因/明日建议，保持 status=draft）→ sun_notify(ask) 请求审核。' },
+        { label: '晨报 08:45', title: 'Sun 晨间简报', cron: '45 8 * * 1-5', prompt: '【定时 · 晨间简报】按 runbook §5 执行晨报：sun_read(triggers/tasks/runbook/memory) → 生成今日计划追加到 40-Journal/当日.md 晨报小节 → 预建/更新任务笔记（sun_vault_meta 流转状态）→ 以 ask_user_question 决策卡推送摘要请我确认。触发队列里 sys-onboarding-guide 类待办按 runbook §6 过滤。自检兜底：sun_state_read 核对 resolvedVault 与 vaults 登记的 router 是否为本会话 → 不符则 sun_state_write {"router": true} 修正。' },
+        { label: '日报 18:30', title: 'Sun 日报', cron: '30 18 * * 1-5', prompt: '【定时 · 日报】按 runbook §7 执行日报：sun_read(tasks/journal/note full) 汇总当日任务 → 日报追加到 40-Journal/当日.md（今日完成/未完成与原因/明日建议，保持 status=draft）→ 以 ask_user_question 决策卡请求审核。' },
         { label: 'Watchdog 14/21 点', title: 'Sun Watchdog 巡检', cron: '0 14,21 * * 1-5', prompt: '【定时 · Watchdog 巡检】按 runbook §3 分级巡检，quiet by default——一切正常则不发任何通知。检查：①running 超 2h → urgent+重派建议 ②need-confirm 超 2h → urgent 重推 ③工作日缺晨报/日报小节 → 按 §5/§7 补跑 ④sun_state_read 核对当前生效知识库与 router 登记，不符则 sun_state_write {"router": true} 修正。' },
-        { label: '周复盘 周五 17:00', title: 'Sun 周复盘', cron: '0 17 * * 5', prompt: '【定时 · 周复盘】生成 90-Meta/reflections/当周.md（frontmatter: type reflection/status draft/week/本地时间戳）：§本周概览含派发预算执行 §做得好/不好各≤3 §runbook 修订建议 diff §下周关注含轮换触发线检视 → 周报以「## 周复盘」追加 Journal（status=draft）→ sun_notify(ask) 请求审核，人审后 diff 生效。' },
+        { label: '周复盘 周五 17:00', title: 'Sun 周复盘', cron: '0 17 * * 5', prompt: '【定时 · 周复盘】生成 90-Meta/reflections/当周.md（frontmatter: type reflection/status draft/week/本地时间戳）：§本周概览含派发预算执行 §做得好/不好各≤3 §runbook 修订建议 diff §下周关注含轮换触发线检视 → 周报以「## 周复盘」追加 Journal（status=draft）→ 以 ask_user_question 决策卡请求审核，人审后 diff 生效。' },
       ]
 
       // ===== 定时任务区：列表 + 新建表单（target 自动绑当前 Router 会话，补 UI 无 session 选项的缺口）=====

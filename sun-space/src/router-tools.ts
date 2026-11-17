@@ -8,7 +8,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inlineSummary, localDate, parseFrontmatter, resolveRead, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
-import { currentUserId, dingSelf, notifySelf } from './dws'
 
 export const inject = ['tools', 'subagents']
 
@@ -59,12 +58,6 @@ function def(name: string, description: string, parameters: unknown, execute: (a
     execute: async (args: unknown, exec: unknown) => lossless(await execute(args ?? {}, exec)),
   }
 }
-
-/** info 级打扰预算：每日 ≤5 条（ask/urgent 不受限）。进程内计数。 */
-const infoBudget = { date: '', sent: 0 }
-
-/** DING 强推级别（自发自收消息不触发客户端推送，E2E 用户反馈）。可用 env 覆盖，如 "urgent"。 */
-const DING_LEVELS = new Set((process.env.SUN_DING_LEVELS ?? 'ask,urgent').split(','))
 
 export function apply(ctx: Context) {
   ctx.tools.register(def(
@@ -161,50 +154,9 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.tools.register(def(
-    'sun_notify',
-    '推送钉钉通知给用户（插件代发，不经 LLM）。level=info 攒批（每日≤5，无推送）/ ask 立即+DING 强推 / urgent 立即+DING。文本 ≤100 字，结论先行。',
-    {
-      type: 'object',
-      properties: {
-        level: { type: 'string', enum: ['info', 'ask', 'urgent'] },
-        text: { type: 'string' },
-      },
-      required: ['level', 'text'],
-    },
-    async (args: { level: string; text: string }) => {
-      const today = localDate()
-      if (infoBudget.date !== today) { infoBudget.date = today; infoBudget.sent = 0 }
-      if (args.level === 'info' && infoBudget.sent >= 5) {
-        return { ok: false, note: 'info 打扰预算已用尽（5/日）——改为写入 Journal 通知流水' }
-      }
-      let uid: string
-      try {
-        uid = await currentUserId()
-      } catch (e) {
-        return { ok: false, note: `凭证探活失败: ${String((e as Error).message).slice(0, 120)}` }
-      }
-      let res: unknown
-      try {
-        res = await notifySelf(uid, `[Sun·${args.level}] ${args.text}`)
-      } catch (e) {
-        // dws 未登录/网络失败不裸抛——返回结构化失败，Router 可降级写 Journal（复审遗留项）
-        return { ok: false, note: `通知发送失败: ${String((e as Error).message).slice(0, 150)}` }
-      }
-      if (args.level === 'info') infoBudget.sent++
-      // ask/urgent 补 DING 强推（自发自收消息无客户端推送）
-      let ding: { ok: boolean } | undefined
-      if (DING_LEVELS.has(args.level)) {
-        try {
-          ding = await dingSelf(uid, `[Sun·${args.level}] ${args.text}`)
-        } catch (e) {
-          ding = { ok: false }
-          ctx.logger?.warn?.(`[sun-space] ding failed: ${String((e as Error).message).slice(0, 120)}`)
-        }
-      }
-      return { ok: true, data: { message: res, ding } }
-    },
-  ))
+  // sun_notify 已于 0.3.6 移除——通知不再依赖 dws/钉钉通道：
+  // 人侧提醒交给 DSH 通知类插件（监听宿主事件：完成/提问/等待批准/子任务完成，浏览器弹出）；
+  // Router 需要人决策时直接用原生 ask_user_question 决策卡（即"提问"事件，通知插件会即时提醒）。
 
   ctx.tools.register(def(
     'sun_vault_meta',
@@ -339,5 +291,5 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_notify sun_state_read sun_state_write sun_route(subagents)')
+  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_state_read sun_state_write sun_route(subagents)')
 }

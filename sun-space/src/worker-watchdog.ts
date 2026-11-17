@@ -17,8 +17,8 @@
  * 跨 preset 的子会话事件；cordis 事件冒泡保证全局 scope 全收，归属用会话头判。
  * 停止动作选 **interrupt**（可观测的最小动作）：它触发 settled 通知——Router 被
  * 唤醒，卡死从静默变成可见；重派是 Router 的决定（它看得见报告），看门狗不越权。
- * 另加本仓库自己的观测通道：写 trigger 队列 + urgent 通知（Interrupt 通道万一失效
- * 也不至于全瞎，且钉进钉钉推送）。
+ * 另加本仓库自己的观测通道：写 trigger 队列（Interrupt 通道万一失效也不至于全瞎；
+ * 0.3.6 起不再发钉钉通知——人侧提醒由通知类插件监听宿主事件完成）。
  *
  * ── 判据与失败取向 ──────────────────────────────────────────────────────────
  *
@@ -115,10 +115,10 @@ export function apply(ctx: Context) {
     try { (ctx.logger?.[level] ?? ctx.logger?.info)?.call(ctx.logger, `[sun-space/watchdog] ${msg}`) } catch { /* 日志失败不反炸 */ }
   }
 
-  /** 停滞善后：先 trigger 落盘（本仓库观测通道），再 urgent 通知，再 interrupt 唤醒 Router。 */
+  /** 停滞善后：trigger 落盘（本仓库观测通道）→ interrupt 唤醒 Router（Router 经决策卡提醒人——浏览器通知由通知类插件负责）。 */
   const handleStall = async (entry: { id: string; parentId: string | undefined; at: number }) => {
     const idleMin = Math.round((Date.now() - entry.at) / 60_000)
-    log('warn', `stalled: child=${entry.id} idle=${idleMin}min — interrupting & notifying`)
+    log('warn', `stalled: child=${entry.id} idle=${idleMin}min — interrupting`)
     try {
       await mkdir(triggerDir(), { recursive: true })
       const ts = new Date().toISOString().replace(/[:.]/g, '-')
@@ -128,11 +128,6 @@ export function apply(ctx: Context) {
         'utf8',
       )
     } catch { /* trigger 落盘失败不阻断后续 */ }
-    try {
-      const { currentUserId, notifySelf } = await import('./dws')
-      const uid = await currentUserId()
-      await notifySelf(uid, `[Sun·urgent] Watchdog 停止了卡死 Worker：${entry.id}（无活动 ${idleMin} 分钟），请复查或重派`)
-    } catch { /* 通知失败不掩盖 interrupt */ }
     try {
       const subagents = ctx.get<{ interrupt?: Function }>('subagents')
       if (!subagents || typeof subagents.interrupt !== 'function') {
