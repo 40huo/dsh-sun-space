@@ -13,7 +13,7 @@
 
 ## 0. TL;DR
 
-**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 dws 轮询 Source、`sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 工作台**（Router 会话上的 tab，§8.6）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
+**Sun**（太阳：常亮常在）是一个运行在 DeepSeek Harness 桌面版上的个人 Super-agent：它以一个 Obsidian 兼容的纯 Markdown vault 为唯一知识存储，以 dws（钉钉官方 Workspace CLI）为唯一外部连接层，整体打包为一个 **TypeScript/Cordis 插件 `sun-space`**——内部含 `sun-router`/`sun-worker` 两个预设（工具白名单在工具层物理隔离执行权，Router 无 Bash）、钉钉通知、以及 **DSH 工作台**（Router 会话上的 tab，§8.6）；dws 轮询 Source 已于 0.3.6 移除（§5.1 状态注记）。其余一切——规则、记忆、任务、日报、反思——都是 Markdown，由 LLM 直接读写。 每个工作日形成"晨间规划 → 人工确认 → Worker 并行执行 → 落库 → 日报 → 反馈 → 反思改进"的完整闭环，并随时穿插临时任务，所有过程自动沉淀为可双链、可检索、可数据库视图的知识资产。
 
 ```mermaid
 flowchart TB
@@ -27,7 +27,7 @@ flowchart TB
     end
 
     subgraph L3["事件与调度层 · sun-space 插件"]
-        SRC["Source：dws 轮询快照 diff<br/>（TS 层，零 LLM；业务定时在 DSH 原生 schedule）"]
+        SRC["Source：已移除（0.3.6）——外部感知由 Router 在定时任务内按需 dws 查询"]
         F["两级过滤<br/>TS 程序层 → LLM 语义层"]
     end
 
@@ -79,7 +79,7 @@ flowchart TB
 | # | 原则 | 落地方式 |
 |---|------|---------|
 | 1 | **一切皆文件** | 知识、规则、记忆、任务记录、自动化配置全部是 Markdown/YAML；LLM 直接读写，无私有格式、无数据库进程 |
-| 2 | **代码极简、边界用代码** | 自研物 = 一个 TypeScript/Cordis 插件 `sun-space`（§6.6）：Source 轮询、预设工具白名单、通知、Panel 都是 TS，核心数百行；**流程编排仍由 LLM 按 Markdown 规则执行**，代码只做确定性边界（谁能干什么）与胶水（数据进出），不做业务逻辑 |
+| 2 | **代码极简、边界用代码** | 自研物 = 一个 TypeScript/Cordis 插件 `sun-space`（§6.6）：预设工具白名单、通知、Panel 都是 TS，核心数百行；**流程编排仍由 LLM 按 Markdown 规则执行**，代码只做确定性边界（谁能干什么）与胶水（数据进出），不做业务逻辑 |
 | 3 | **LLM 分派，代码执行** | Router 用自然语言规则决定"做什么、派给谁"；确定性工作交给 dws CLI / 工具调用 |
 | 4 | **DSH 原生优先** | 全部能力装进一个 TypeScript/Cordis 插件：调度与感知用插件 Source、边界用预设工具白名单、呈现用 client 侧栏面板、能力用 skills；不引入常驻自建服务、消息队列、外部数据库 |
 | 5 | **人上移到决策与验收** | 参考 Super-agent 理念：人只做"确认/验收/反馈"，其余由系统接管；打扰被严格预算化 |
@@ -94,7 +94,7 @@ flowchart TB
 |----|------|------|---------|
 | 知识存储层 | `<VAULT_PATH>` Obsidian vault | 唯一事实源：任务、日报、记忆、规则、知识 | Obsidian 社区 / PARA |
 | Agent 运行层 | Router 主会话（`sun-router` 预设，**无执行工具**）+ Worker ×N（`sun-worker` 预设）+ Watchdog | 交互、分派、落库；隔离执行；异常巡检 | Super-agent 双层架构 + dsh-superagent 预设机制 |
-| 事件与调度层 | DSH 原生自动化任务（业务定时）+ `sun-space` 插件 Source（dws 轮询快照 diff）+ 两级过滤 | 主动性的来源：定时触发 + 环境状态感知（快照 diff） | Super-agent 事件驱动 + Claude Duet 轮询模型 + OpenClaw 心跳 |
+| 事件与调度层 | DSH 原生自动化任务（业务定时；外部感知由 Router 定时任务内按需 dws 查询，轮询 Source 已移除）+ 两级过滤 | 主动性的来源：定时触发 + Router 环境状态感知 | Super-agent 事件驱动 + Claude Duet 轮询模型 + OpenClaw 心跳 |
 | 连接层 | dws CLI（钉钉官方，为 Agent 设计） | 数据读写、通知、IM 直连 | dws 官方 |
 | 守护层 | Preset 工具白名单 + 命令黑名单（TS）+ 权限分级 | Agent 之外的硬边界，不依赖模型自觉 | dsh-superagent noWait/WORK_TOOLS + Claude Duet 外部检查器 |
 | 交互呈现层 | DSH 工作台（client 插件单页）+ 确认卡片 + 钉钉通知中心 | agent 工作状态可视、随时随地确认、通知可回溯 | dsh-superagent Panel + Claude Duet Tasks/审批卡 |
@@ -106,7 +106,7 @@ flowchart TB
 | Super-agent 文章模块 | Sun Space 实现 | 差异说明 |
 |---------------------|---------------|---------|
 | 双层架构（Router/Worker） | Router/Worker 双预设，工具白名单互斥（Router 仅应用工具+巡检级宿主工具，Worker 无面向人的提问/呈现工具） | 原型同款做法（Router 14 应用工具 + 被守卫的 bash；Worker 排除 ask_user_question/present）；本架构更严（Router 完全无 bash） |
-| 事件驱动（Trigger/两级过滤/订阅直通/Inline & Spill/链式召回） | 业务定时在 DSH 原生 schedule；插件 Source 只做 dws 单次命令轮询快照（与上次快照 diff 得出变化）；`--jq` 程序层过滤；vault 引用图 + ID 体系 | Harness 无常驻事件总线，用"全量快照 + 状态 diff"近似事件流（Claude Duet 同款轮询模型）；`dws event consume` 长连接留作 P3 可选实验 |
+| 事件驱动（Trigger/两级过滤/订阅直通/Inline & Spill/链式召回） | 业务定时在 DSH 原生 schedule；外部感知由 Router 在定时任务内按需 dws 查询（快照轮询 Source 已于 0.3.6 移除）；`--jq` 程序层过滤；vault 引用图 + ID 体系 | Harness 无常驻事件总线，用"全量快照 + 状态 diff"近似事件流（Claude Duet 同款轮询模型）；`dws event consume` 长连接留作 P3 可选实验 |
 | 面向人的交互（异步 ReAct/多信道） | Worker 后台执行不阻塞 Router 对话；IM ≤100 字 / 桌面深度对话 双信道规范 | — |
 | 存算分离 | 桌面端运行（状态=本地 vault 文件）；云托管不在本期范围 | 诚实边界：插件定时器依赖桌面 App（DSH Web 进程）在线 |
 | Watchdog | 独立的每日巡检定时器（插件 Source），检查任务超时/卡死 | 用"定时触发 + 读取任务状态文件"实现外部控制回路 |
@@ -249,14 +249,16 @@ Watchdog 本身也是 LLM 会话：可以用自然语言询问它"为什么今�
 
 ## 5. 事件与调度层
 
-### 5.1 两类 Trigger：定时 + 轮询快照
+### 5.1 Trigger：定时（快照轮询已于 0.3.6 移除）
 
-两类 Trigger 都由 `sun-space` 插件的 Source 产生（`ctx` 定时器随 DSH Web 进程常驻），进入 Router 的 Trigger 队列：
+> **状态（2026-11-17）**：dws 轮询 Source（快照 diff + 凭证探活告警）已整体移除——机械轮询不 AI native，外部变化感知改由 Router 在晨报等定时任务里按需 `dws` 查询（LLM 判断要看什么、怎么看）。以下快照 Trigger 设计留档备查；`dws event consume` 长连接仍为 P3 可选实验。trigger 队列机制保留（worker-watchdog 停滞事件写入，`sun_read(triggers)` 消费）。
+
+业务 Trigger 由 DSH 原生"自动化任务"承载（cron + prompt，代码零 cron，§5.3），进入 Router 的 Trigger 队列：
 
 | 类型 | 载体 | 例 |
 |------|------|----|
 | 定时 Trigger | DSH 原生"自动化任务"（cron + prompt，代码零 cron，§5.3） | 08:45 晨报、18:30 日报、14:00/21:00 Watchdog、周五 17:00 周复盘 |
-| 快照 Trigger | Source **定时单次 exec** dws 查询命令，与 vault 中已有 `source_id` 状态 diff | 新待办、新审批、待办状态变更、日历变化 |
+| ~~快照 Trigger~~（已移除） | ~~Source 定时单次 exec dws 查询，与 `source_id` 状态 diff~~ → Router 在定时任务内按需 `dws` 查询 | 晨报内的待办/审批盘点 |
 
 **为何不做长连接（设计决策）**：① 零常驻子进程——无需 launchd/守护脚本，凭证、重试、生命周期全部随单次命令走；② 幂等可重试——每次都是全量快照，掉线期间不存在"错过"，恢复后第一次轮询自动补齐；③ **轮询在 TS 层执行，零 LLM 成本**——只有 diff 出新 Trigger 才进入 Router 消耗 token；④ 与 Claude Duet 同款模型——按固定间隔检查账户，实践证明对个人场景足够。代价是新审批的感知延迟 ≤ 一个轮询间隔（实现取 30 分钟，纯程序层几乎无成本）。`dws event consume` 长连接留作 P3 可选实验（支持 `--duration` 有界窗口），核心链路不依赖它。
 

@@ -62,7 +62,7 @@ if (composed) {
 // ---------- ② tsc 严格检查（抓补丁链丢声明，aliveRef 教训） ----------
 section('② TypeScript 严格检查')
 try {
-  const files = ['index', 'source', 'router-tools', 'worker-guard', 'worker-vault', 'vault', 'vault-path', 'dws', 'ambient']
+  const files = ['index', 'router-tools', 'worker-guard', 'worker-vault', 'vault', 'vault-path', 'dws', 'ambient']
     .map(n => `src/${n}.ts`).join(' ').replace('src/ambient.ts', 'src/ambient.d.ts')
   execFileSync('npx', ['tsc', '--noEmit', '--strict', '--module', 'esnext', '--moduleResolution', 'bundler',
     '--target', 'es2022', '--skipLibCheck', ...files.split(' ')],
@@ -83,7 +83,7 @@ try {
 }
 
 // ---------- ④ 构建新鲜度（src → lib：HANDOFF 踩坑 4"以运行时 lib 为契约源"——verify 全绿不能描述旧代码） ----------
-// tsdown 会把被 import 的模块（source/vault/dws 等）打进入口 bundle，lib 只有入口产物——
+// tsdown 会把被 import 的模块（vault/dws 等）打进入口 bundle，lib 只有入口产物——
 // 故用保守规则：任一 src/*.ts 新于任一 lib/*.mjs 即判可能过期（client.js 由 src 直供、刷新即生效，不参与）。
 section('④ 构建新鲜度（src/*.ts vs lib/*.mjs）')
 try {

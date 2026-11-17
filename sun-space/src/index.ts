@@ -1,11 +1,12 @@
 /**
  * sun-space 插件入口。
  * 预设（sun-router / sun-worker）由 cordis.patch.yml 声明为 agent-preset；
- * 本入口负责 Source（dws 轮询 + 定时 Trigger）。
+ * 本入口挂全局 Watchdog 与 vault 根自动登记。
+ * （dws 轮询 Source 已于 0.3.6 移除——机械轮询不 AI native，业务触发一律走 DSH 原生
+ *  schedule 由 Router 执行；trigger 队列仍由 worker-watchdog 写入、sun_read(triggers) 消费。）
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { publishVaultState, registerVaultRootFromSession } from './vault-path'
-import * as source from './source'
 import * as workerWatchdog from './worker-watchdog'
 
 export const name = 'sun-space'
@@ -15,7 +16,6 @@ export const inject = ['timer', 'tools']
 
 export function apply(ctx: Context) {
   publishVaultState() // vault 解析结果落盘 ~/.dsh/state/sun-space/，供浏览器端孙学空间发现
-  ctx.plugin(source)
   ctx.plugin(workerWatchdog) // 全局 scope：盯 sun-worker 子代理卡死（事件冒泡到这里）
   // 首个 sun-router 会话创建时，自动登记其工作目录为 vault 根
   // （"当前目录作为 vault"语义的插件层落点；门控在 registerVaultRootFromSession——
