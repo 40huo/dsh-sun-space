@@ -49,7 +49,9 @@ dsh plugin --profile web update dsh-sun-space     # 或 remove 后重新 add
 
 **dws 沙箱说明**：Worker 会话的 dws 命令若报 `open ~/.dws/.data.lock: operation not permitted`，Worker 会按预设指示自动 `export DWS_CONFIG_DIR=$(mktemp -d)` 重试自愈（凭证存 Keychain 不受影响），无需人工干预。本机开发态（`--patch`）保留了沙箱白名单覆写，不受影响。
 
-安装后打开 Router 会话 → 「孙学空间」tab，初始化检查会自动定位知识库。vault 路径解析优先级：① 环境变量 `SUN_VAULT` ② `~/.dsh/state/sun-space/config.json`（手写 `{ "vault": "/你的/绝对路径" }`，持久化）③ 默认约定 `~/Workspace/sun-vault`。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
+**伴生通知插件（0.3.6 起）**：安装 dsh-sun-space 会同时带入 [@lyhalal/dsh-notification-center](https://www.npmjs.com/package/@lyhalal/dsh-notification-center)——完成/提问/等待批准/子任务完成等宿主事件自动弹**浏览器通知**（+可选音效，设置页可逐事件开关）。人侧提醒不再走钉钉；Router 需要决策时用原生决策卡，通知插件会即时提醒。不想用可在 DSH 插件页禁用该行。
+
+安装后打开 Router 会话 → 「孙学空间」tab，初始化检查会自动定位知识库。vault 路径解析优先级：① 环境变量 `SUN_VAULT` ② `~/.dsh/state/sun-space/config.json`（手写 `{ "vault": "/你的/绝对路径" }`，持久化）③ 会话工作目录（已含 90-Meta 骨架的工作区即知识库）④ `state.json` 的 vaults 分桶登记（新工作区初始化时自动登记，一库一条 `{dir, router?}`）⑤ 默认约定 `~/Workspace/sun-vault`。生产定时任务不随插件分发，按上文薄引用写法在工作台「新增定时任务」表单重建（晨报 08:45 / 日报 18:30 / Watchdog 14:00+21:00 / 周复盘 周五 17:00，工作日）。
 
 也可从 GitHub 直装（同内容）：`dsh plugin --profile web add github:40huo/dsh-sun-space#path:sun-space`——`lib/` 不进 git，此路线会在安装时构建，pnpm 拦截 prepare 脚本时按提示在 profile 的 `pnpm-workspace.yaml` 加 `allowBuilds` 后重跑。
 

@@ -16,6 +16,13 @@
         additionalWritableRoots:
           - /Users/40huo/.dws
 
+    # ============ 伴生通知插件（0.3.6 引入，人侧提醒：浏览器通知，宿主事件驱动）============
+    # 分发形态在 bundle.patch.yml 以包名行激活（包体经本包 dependencies 带入）。
+    # 本机开发态默认注释：本实例 profile 未装该包时启用会导致行加载失败——
+    # 需要时先 `dsh plugin --profile <p> add @lyhalal/dsh-notification-center` 再取消注释。
+    # - id: sun-notify-center
+    #   name: '@lyhalal/dsh-notification-center'
+
     - id: sun-space
       name: '/Users/40huo/Workspace/dsh-sun-space/sun-space/lib/index.mjs'
 

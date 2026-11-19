@@ -2,7 +2,7 @@
   "name": "dsh-sun-space",
   "version": "0.3.6",
   "type": "module",
-  "description": "Sun Space：DeepSeek Harness 个人超智能体插件——Router/Worker 双预设工具白名单、钉钉待办轮询、Obsidian 知识库落库、会话工作台与定时任务管理。",
+  "description": "Sun Space：DeepSeek Harness 个人超智能体插件——Router/Worker 双预设工具白名单、Obsidian 知识库落库、会话工作台与定时任务管理，伴生浏览器通知插件（宿主事件驱动）。",
   "exports": {
     ".": "./lib/index.mjs",
     "./client": "./src/client.js",
@@ -24,7 +24,8 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.1.0"
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@lyhalal/dsh-notification-center": "^0.1.35"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
