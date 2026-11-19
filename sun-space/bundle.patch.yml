@@ -12,12 +12,11 @@
     - id: sun-space
       name: 'dsh-sun-space'
 
-    # ============ 伴生通知插件（0.3.6 引入）：人侧提醒，宿主事件驱动 ============
-    # sun_notify/钉钉通道已移除——完成/提问/等待批准/子任务完成等宿主事件由它弹浏览器通知，
-    # 与 sun-space 零代码耦合（可经 DSH 插件行开关禁用；独立卸载会撞 bundle-in-use——踩坑 6 同款，属预期）。
-    # 包体由本包 dependencies 带入 profile node_modules，行加载即激活（client 半自动注入 web 平台）。
-    - id: sun-notify-center
-      name: '@lyhalal/dsh-notification-center'
+    # ============ 伴生通知插件（0.3.6 推荐安装，不在本 bundle 内）============
+    # @lyhalal/dsh-notification-center（宿主事件→浏览器通知）经其自带 bundle 独立自激活，
+    # 与 sun-space 零耦合：`dsh plugin --profile web add @lyhalal/dsh-notification-center`
+    # 不做成 dependencies/bundle 行的原因：其 peer（@deepseek-ai/dsh-client-*）在公共 npm
+    # 无稳定版（仅 alpha/next 预发道），随包分发会让终端用户的插件安装解析失败（2026-11-19 实测）。
 
     # ============ sun-router：交互 · 分派 · 落库 · 反思（无执行工具） ============
     - id: sun-router-preset

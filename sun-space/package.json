@@ -24,8 +24,7 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.1.0",
-    "@lyhalal/dsh-notification-center": "^0.1.35"
+    "@deepseek-ai/cordis": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
