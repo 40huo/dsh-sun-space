@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
       // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
       // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v23' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v24' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -85,6 +85,7 @@ window.__ModuleLoader__.load({
         'session/list': a => ({ _request: a ?? {} }),
         'session/create': a => ({ request: a }),
         'session/prompt': a => ({ request: a }),
+        'session/projections': a => ({ request: a }),
         'workspace/create': a => ({ request: a }),
         'schedule/list': a => ({ request: a ?? {} }),
         'schedule/create': a => ({ request: a }),
@@ -262,24 +263,42 @@ window.__ModuleLoader__.load({
       }
 
 
+      // ===== 派活树取数（v24：宿主事实源 + vault 注解，不再依赖今日 Journal）=====
+      // ① 子代理清单：Router 会话的 subagentCatalog 投影（宿主 append-only 事件，label=派发时的 task_id）
+      // ② 活跃状态：session/list 条目的 subagentTiming 投影 join（timing.active 在 = 运行中）
+      // ③ vault 注解（可选降级——读失败只缺附注不缺树）：label ↔ 50-Tasks/T-*.md frontmatter
       async function loadTasks(routerSession, vault) {
-        if (!routerSession || !vault) return []
-        const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })
-        let journalText = ''
-        try { journalText = await readVaultFile(routerSession, `${vault}/40-Journal/${today}.md`, 200) } catch {}
-        const ids = [...new Set([...journalText.matchAll(/\[\[(T-\d{8}-\d{2})\]\]/g)].map(m => m[1]))]
-        const tasks = []
-        for (const id of ids.slice(0, 20)) {
-          try {
-            const fm = parseFrontmatter(await readVaultFile(routerSession, `${vault}/50-Tasks/${id}.md`, 24))
-            if (fm.id) tasks.push({
-              id: fm.id, status: fm.status || 'proposed', source: fm.source || '',
-              priority: fm.priority || 'medium', journal: fm.journal || '', session: fm.session || '',
-              artifacts: fm.artifacts || [],
-            })
-          } catch {}
+        if (!routerSession) return { rows: [], catalogCount: 0, catalogError: null }
+        let entries = []
+        let catalogError = null
+        try {
+          const v = await gw('session/projections', { sessionId: routerSession })
+          const cat = v?.values?.subagentCatalog
+          if (!Array.isArray(cat)) throw new Error('投影缺 subagentCatalog')
+          entries = cat
+        } catch (e) { catalogError = '子代理目录读取失败：' + String(e?.message ?? e).slice(0, 120) }
+        let items = []
+        try {
+          const v = await gw('session/list', {})
+          items = Array.isArray(v?.items) ? v.items : Object.values(v?.items ?? v ?? {})
+        } catch { /* 列表失败 → 状态列缺省为已结束 */ }
+        const byId = new Map(items.map(s => [s.sessionId, s]))
+        const rows = []
+        for (const e of entries) {
+          const item = byId.get(e.id)
+          const timing = item?.projectionValues?.subagentTiming ?? item?.projections?.values?.subagentTiming
+          const activity = timing && timing.active !== undefined ? 'running' : 'settled'
+          const tid = String(e.label ?? '').toUpperCase() // sun_route 命名：t-YYYYMMDD-NN → 笔记 T-YYYYMMDD-NN.md
+          let task = null
+          if (vault && /^T-\d{8}-\d{2}$/.test(tid)) {
+            try {
+              const fm = parseFrontmatter(await readVaultFile(routerSession, `${vault}/50-Tasks/${tid}.md`, 24))
+              if (fm.id) task = { id: fm.id, status: fm.status || 'proposed', source: fm.source || '', artifacts: fm.artifacts || [] }
+            } catch { /* 笔记缺失 → 无注解，不阻塞 */ }
+          }
+          rows.push({ child: e.id, label: e.label ?? String(e.id).slice(0, 14), activity, updatedAt: item?.updatedAt ?? '', task })
         }
-        return tasks
+        return { rows, catalogCount: entries.length, catalogError }
       }
 
       // ===== SunIcon =====
@@ -519,28 +538,28 @@ window.__ModuleLoader__.load({
         const allReady = !!(init.checks && init.checks.vault && init.checks.presets && routerSession)
         const aliveRef = React.useRef(true)
         React.useEffect(() => () => { aliveRef.current = false }, [])
-        const [state, setState] = React.useState({ loading: true, tasks: [], error: null })
+        const [state, setState] = React.useState({ loading: true, rows: [], catalogCount: 0, catalogError: null, error: null })
         const reload = React.useCallback(() => {
           setState(s => ({ ...s, loading: true, error: null }))
           loadTasks(routerSession, vault)
-            .then(tasks => setState({ loading: false, tasks, error: null }))
-            .catch(e => setState({ loading: false, tasks: [], error: String(e.message || e) }))
+            .then(r => setState({ loading: false, rows: r.rows, catalogCount: r.catalogCount, catalogError: r.catalogError, error: null }))
+            .catch(e => setState({ loading: false, rows: [], catalogCount: 0, catalogError: null, error: String(e.message || e) }))
         }, [routerSession, vault])
         React.useEffect(() => { reload() }, [reload])
 
-        const by = s => state.tasks.filter(t => t.status === s)
+        const running = state.rows.filter(r => r.activity === 'running')
         const counters = [
-          ['未派发', by('proposed').length, STATUS_META.proposed.color],
-          ['进行中', by('running').length, STATUS_META.running.color],
-          ['等你确认', by('need-confirm').length, STATUS_META['need-confirm'].color],
-          ['已完成', by('done').length, STATUS_META.done.color],
+          ['子代理', state.rows.length, '#9e9e9e'],
+          ['运行中', running.length, STATUS_META.running.color],
+          ['等你确认', state.rows.filter(r => r.task?.status === 'need-confirm').length, STATUS_META['need-confirm'].color],
+          ['已完成', state.rows.filter(r => r.task?.status === 'done').length, STATUS_META.done.color],
         ]
-        const order = { 'need-confirm': 0, running: 1, proposed: 2, blocked: 3, done: 4, dropped: 5 }
-        const tasks = [...state.tasks].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
-        const anyRunning = by('running').length > 0
+        const rank = r => r.activity === 'running' ? 0 : (r.task?.status === 'need-confirm' ? 1 : (r.task?.status === 'done' || r.task?.status === 'dropped' ? 3 : 2))
+        const rows = [...state.rows].sort((a, b) => rank(a) - rank(b) || String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        const anyRunning = running.length > 0
 
         const openTaskSession = (t) => {
-          const target = t.session || routerSession
+          const target = t.child || routerSession
           if (!target) { D.errors.push('openTaskSession: 无目标会话'); return }
           // 隐式契约（勿破坏）：跳转会卸载会话视图 → aliveRef 置 false → 重试自停；
           // 若未来挂载结构改为"跳转不卸载"，这里的 12×800ms 重试会变成劫持导航十秒。
@@ -619,24 +638,26 @@ window.__ModuleLoader__.load({
               anyRunning ? '干活中' : '待命',
             ]),
           ]),
-          tab === 'overview' && tasks.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
-          tab === 'overview' && tasks.map(t => h('div', { key: t.id, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
+          tab === 'overview' && rows.length > 0 && h('div', { key: 'trunk', style: { width: 2, height: 14, background: 'rgba(128,128,128,0.35)', marginLeft: 14 } }),
+          tab === 'overview' && rows.map(r => h('div', { key: r.child, style: { position: 'relative', paddingLeft: 20, paddingBottom: 8 } }, [
             h('div', { key: 'elbow', style: { position: 'absolute', left: 13, top: -8, width: 8, height: 30, borderLeft: '2px solid rgba(128,128,128,0.35)', borderBottom: '2px solid rgba(128,128,128,0.35)', borderTop: '2px solid rgba(128,128,128,0.35)', borderTopLeftRadius: 6 } }),
-            h('div', { key: 'card', title: '点击打开对应会话', onClick: () => openTaskSession(t), style: {
-              cursor: 'pointer', ...cardStyle(t.status === 'need-confirm' ? STATUS_META['need-confirm'].color : undefined),
-              borderLeftColor: STATUS_META[t.status]?.color || '#999',
-              background: t.status === 'running' ? 'rgba(77,157,232,0.08)' : 'transparent',
+            h('div', { key: 'card', title: '点击打开子代理会话', onClick: () => openTaskSession(r), style: {
+              cursor: 'pointer', ...cardStyle(),
+              borderLeftColor: r.task?.status === 'need-confirm' ? STATUS_META['need-confirm'].color : (r.activity === 'running' ? STATUS_META.running.color : 'rgba(128,128,128,0.4)'),
+              background: r.activity === 'running' ? 'rgba(77,157,232,0.08)' : 'transparent',
             } }, [
-              h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: STATUS_META[t.status]?.color || '#999', display: 'inline-block' } }),
-              h('span', { key: 'id', style: { fontFamily: 'monospace', fontSize: 12 } }, t.id),
-              h('span', { key: 's', style: { fontSize: 12, color: STATUS_META[t.status]?.color } }, STATUS_META[t.status]?.label || t.status),
-              h('span', { key: 'src', style: { fontSize: 11, opacity: 0.55 } }, t.source),
-              t.journal ? h('span', { key: 'j', style: { fontSize: 11, opacity: 0.45, fontFamily: 'monospace' } }, t.journal) : null,
-              (t.artifacts && t.artifacts !== '[]' && t.artifacts !== '') ? h('span', { key: 'ar', title: String(t.artifacts), style: { fontSize: 11, opacity: 0.55 } }, '📦') : null,
-              t.status === 'need-confirm' ? h('span', { key: 'wait', style: { fontSize: 12, color: STATUS_META['need-confirm'].color, marginLeft: 'auto' } }, '等你决策 →') : null,
+              h('span', { key: 'dot', style: { width: 8, height: 8, borderRadius: 4, background: r.activity === 'running' ? '#4d9de8' : (r.task ? STATUS_META[r.task.status]?.color || '#999' : '#777'), display: 'inline-block' } }),
+              h('span', { key: 'id', style: { fontFamily: 'monospace', fontSize: 12 } }, r.label),
+              h('span', { key: 'act', style: { fontSize: 12, color: r.activity === 'running' ? '#4d9de8' : 'rgba(128,128,128,0.8)' } }, r.activity === 'running' ? '运行中' : '已结束'),
+              r.task ? h('span', { key: 's', style: { fontSize: 12, color: STATUS_META[r.task.status]?.color } }, STATUS_META[r.task.status]?.label || r.task.status)
+                : h('span', { key: 'nn', style: { fontSize: 11, opacity: 0.45 } }, '无任务注解'),
+              r.task?.source ? h('span', { key: 'src', style: { fontSize: 11, opacity: 0.55 } }, r.task.source) : null,
+              (r.task?.artifacts && r.task.artifacts !== '[]' && r.task.artifacts !== '') ? h('span', { key: 'ar', title: String(r.task.artifacts), style: { fontSize: 11, opacity: 0.55 } }, '📦') : null,
+              r.task?.status === 'need-confirm' ? h('span', { key: 'wait', style: { fontSize: 12, color: STATUS_META['need-confirm'].color, marginLeft: 'auto' } }, '等你决策 →') : null,
             ]),
           ])),
-          tab === 'overview' && tasks.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '暂无任务——晨报生成后这里会长出派活树'),
+          tab === 'overview' && rows.length === 0 && !state.loading && h('p', { key: 'empty', style: { opacity: 0.5, fontSize: 13, paddingLeft: 20 } }, '尚无子代理——Router 派发任务（sun_route）后实时出现，不再依赖晨报'),
+          tab === 'overview' && state.catalogError ? h('p', { key: 'caterr', style: { color: '#e8634d', fontSize: 12, paddingLeft: 20 } }, '⚠ ' + state.catalogError) : null,
 
           // ===== 定时任务（列表 + 新建表单，仅 Router 视图）=====
           tab === 'schedules' && routerSession ? h(ScheduleSection, { key: 'schedsec', routerSession }) : null,
@@ -647,6 +668,11 @@ window.__ModuleLoader__.load({
           } }, [
             h('div', { key: 't', style: { fontWeight: 600, fontSize: 13, marginBottom: 4 } }, '📓 今日 Journal'),
             h('div', { key: 'd', style: { fontSize: 12, opacity: 0.7, lineHeight: 1.6 } }, `40-Journal/${new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' })}.md —— Obsidian 打开 vault 即见`),
+          ]),
+          tab === 'setup' && h('div', { key: 'subcount', style: { ...cardStyle(state.catalogCount > 30 ? '#e8a24d' : undefined), marginBottom: 8, fontSize: 12 } }, [
+            h('span', { key: 'l' }, '子智能体'),
+            h('b', { key: 'n', style: { marginLeft: 6 } }, `${state.catalogCount} / 50`),
+            h('span', { key: 'd', style: { opacity: 0.6, marginLeft: 8 } }, state.catalogCount > 30 ? '接近轮换线——周复盘检视；>50 晨报将附轮换建议（runbook §10）' : '轮换线 50（runbook §10）'),
           ]),
           tab === 'setup' && h('div', { key: 'setup' }, h(InitPanel, { checks: init.checks, currentSessionId: sessionId, onRetry: runChecks })),
           ]),

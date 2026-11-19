@@ -18,7 +18,7 @@
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
 | 插件（sun-space） | ✅ 双预设 + 7 工具 + 初始化检查面板（dws 轮询 Source 已于 0.3.6 移除——不 AI native；外部感知由 Router 定时任务内按需 dws 查询） | lib/*.mjs（tsdown 构建） |
-| 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，v15：内部分段控件三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建一键预填四条生产预设；派活树 + 直达子会话 + target 漂移检测）| 浏览器 E2E 截图 |
+| 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建；**派活树 v24：数据源 = 宿主 `session/projections` 的 `subagentCatalog`（子代理清单，label=task_id）+ session/list 的 `subagentTiming` join（运行中/已结束），vault 任务笔记仅作可选注解（读失败降级不缺树）——不再依赖今日 Journal，读错误显式化**；设置页显示 子智能体 N/50 轮换线）| 浏览器 E2E 待复验（v24） |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
 | 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
