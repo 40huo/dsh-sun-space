@@ -1,7 +1,7 @@
 # HANDOFF —— 新会话交接文档
 
 > 新开 AI 会话（或人接手）时，把本文件全文丢给对方即可接续工作。
-> 最后更新：2026-11-11 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
+> 最后更新：2026-11-24 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
 
 ## 一、这个项目是什么
 
@@ -18,14 +18,14 @@
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
 | 插件（sun-space） | ✅ 双预设 + 7 工具 + 初始化检查面板（dws 轮询 Source 已于 0.3.6 移除——不 AI native；外部感知由 Router 定时任务内按需 dws 查询） | lib/*.mjs（tsdown 构建） |
-| 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建；**派活树 v24：数据源 = 宿主 `session/projections` 的 `subagentCatalog`（子代理清单，label=task_id）+ session/list 的 `subagentTiming` join（运行中/已结束），vault 任务笔记仅作可选注解（读失败降级不缺树）——不再依赖今日 Journal，读错误显式化**；设置页显示 子智能体 N/50 轮换线）| 浏览器 E2E 待复验（v24） |
+| 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建；**派活树 v24：数据源 = 宿主 `session/projections` 的 `subagentCatalog`（子代理清单，label=task_id）+ session/list 的 `subagentTiming` join（运行中/已结束），vault 任务笔记仅作可选注解（读失败降级不缺树）——不再依赖今日 Journal，读错误显式化**；设置页显示 子智能体 N/50 轮换线）。**v25（0.3.8）**：状态文件按行分页读到 eof（旧实参 limit:8 截断，见踩坑 14）、解析失败记入调试对象 | ✅ 浏览器 E2E（v25，onboarding 测试实例：三步启用 → 一键初始化 → 完整工作台三页；`data-wb-rev="v25"`、`__sunSpaceDebug.errors` 为空） |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
 | 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
-| 单元测试 | ✅ 40 用例（Watchdog 探活/TTL/resolveRead 分级白名单） | `pnpm test` |
+| 单元测试 | ✅ 106 用例（0.3.8：+ 看门狗 `apply()` 全链路、`client.js` 解析链、`sun_state_write` 工具级、守卫拼写变体；此前 40） | `pnpm test` |
 | composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
-| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.2.3，GPL-3.0-or-later）。发版 = commit 后 `npm version patch` + push tag，CI Trusted Publishing 自动发布（OIDC 无令牌 + provenance + 三道闸：tag↔版本硬校验 / 已发布跳过 / actions 钉 SHA）。他机安装：`dsh plugin --profile web add dsh-sun-space`。踩坑：pnpm12 构建白名单= `pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃）；Trusted Publisher 须勾 **Allow npm publish**（stage 默认放行、publish 要显式授权）；通行密钥账号 CLI 无法做 unpublish 等高危动作（需令牌或网页）；校验步骤必须带 `working-directory: sun-space`（仓库根无 package.json） | README「在其他电脑安装」 |
+| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.3.8，GPL-3.0-or-later）。发版 = commit 后 `npm version patch` + push tag，CI Trusted Publishing 自动发布（OIDC 无令牌 + provenance + 三道闸：tag↔版本硬校验 / 已发布跳过 / actions 钉 SHA）。他机安装：`dsh plugin --profile web add dsh-sun-space`。踩坑：pnpm12 构建白名单= `pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃）；Trusted Publisher 须勾 **Allow npm publish**（stage 默认放行、publish 要显式授权）；通行密钥账号 CLI 无法做 unpublish 等高危动作（需令牌或网页）；校验步骤必须带 `working-directory: sun-space`（仓库根无 package.json） | README「在其他电脑安装」 |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
 ## 三、怎么启动/重启
@@ -44,6 +44,13 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 - 改 **宿主 TS**（router-tools/source 等）→ `cd sun-space && pnpm build` → 重启实例
 - 改 **cordis.patch.yml** → 重启实例
 - 每次改完：`pnpm verify`（composition 自检，30 秒）
+- **onboarding 测试实例**（隔离的 `DSH_HOME`，自带凭证/会话/插件状态，可放心做 E2E）：
+  ```bash
+  cd ~/Documents/dsh-onboard-demo
+  DSH_HOME=$PWD/.dsh-home SUN_WATCHDOG_STALL_MS=25000 SUN_WATCHDOG_TICK_MS=5000 \
+    dsh --profile onboarding --port 3081 --no-open   # token 在启动输出首行
+  ```
+  profile 里装的是带 0.3.8 修复的构建：发布前用本地 tarball（`builds/dsh-sun-space-0.3.7.tgz`，内容即仓库源码，仅版本号未 bump）。改代码后重新 `npm pack --pack-destination ~/Documents/dsh-onboard-demo/builds`，再 `dsh plugin --profile onboarding add <tgz>`——同路径覆盖 pnpm 可能不重新解析，换文件名或子目录更稳妥。要与 npm 对齐：`dsh plugin --profile onboarding add dsh-sun-space@<版本>`。网关脚本鉴权同 verify ⑤；`session/create`、`session/prompt`、`workspace/create`、`session/projections` 的 args 要包一层 `request`（`session/list` 是 `_request`）；会话历史用 `session/page`（子会话地址为 `{kind:'subagent', parentSessionId, childSessionId, mode}`，其 id 是裸 UUID）。注意浏览器端读不到 `DSH_HOME` 里的状态目录（见 §五）。
 
 ## 四、关键机制速查
 
@@ -74,8 +81,17 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 6. ~~生产 schedule prompt 同步 ask 卡版~~——已核实完成（11-07 15:10 上会话已更新，schedule/list 里两个生产 prompt 均为 ask 卡版）。
 7. 会话轮换触发线（catalog >50）——观察，W46 周复盘检视。
 8. HRM 档案表单（用户侧，截止 12-07）。
-9. vault 根目录有一空文件 `J-20261107.md`（0 字节杂物，非插件可写路径产物）——可删，留人决定。
-10. **default-workspace 残留测试骨架**（`00-Inbox/40-Journal/50-Tasks/60-Archive/90-Meta` + 根部 dws-todo-*.json，11-11 深夜初始化测试遗留）：会使主实例会话按"含骨架工作区"把 vault 解析到 boot 桶——确认无真实数据后清掉（删除前主实例解析会命中它，晨报/日报会读写错位置）。
+9. ~~vault 根目录有一空文件 `J-20261107.md`~~——该目录已清空，事项不存在（2026-11-24 核实）。
+10. ~~**default-workspace 残留测试骨架**~~——已清理（2026-11-24 核实：default-workspace 仅剩 `backup-ungrouped-sessions`）。
+
+**0.3.8 修复后仍待处理（2026-11-24 排查新增，未修；均已核实）**
+
+- **浏览器端看不到 `DSH_HOME` 隔离的状态目录**：`client.js` 按 HOME 找 `~/.dsh/state/sun-space/`，服务端按 `DSH_HOME`——隔离实例里 `routerSource` 只能走「updatedAt 兜底」（onboarding 实例实测）。需让服务端把状态目录位置告知浏览器（发现文件或 RPC）。
+- **runbook 不随包分发**：一键初始化让模型即兴写 runbook，产物没有编号章节，而定时模板引用 §3/§5/§6/§7/§10（新机器上四条定时任务指向空处）。建议 runbook/schemas 作为插件资源随包、初始化时原样落盘。
+- **有内容无骨架的工作区做初始化**：`{"vault": true}` 被拒后骨架落到默认/配置库，而不是工作区——与界面「以当前工作区为知识库根」的文案不符。
+- **没有 push/PR 的 CI**：`pnpm verify` 只能手跑；⑤ 烟雾的 Router 解析只按 updatedAt（不读登记）、日志路径写死。
+- **触发文件无清理**：TTL 清理随 `source.ts` 一并删除，看门狗仍在写；`sun_read tasks` 每次读全部任务笔记、无过滤无上限。
+- **守卫未覆盖**：`rm -r`（不带强制）、`find -delete`、`pwsh` 的 `Remove-Item -Recurse -Force`；守卫只检查 bash/pwsh/job_output，属纵深防御而非安全边界。
 
 ## 六、踩坑记录（勿重蹈）
 
@@ -91,3 +107,7 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 6. **时间戳时区双坑**（2026-11-08 B-1 定案）：① 带时区偏移（`+08:00`）的 datetime 写进 frontmatter，Obsidian/Bases 会换算显示差 8h（文件值正确）——写入端一律无后缀本地时间 `YYYY-MM-DDTHH:mm`；② `toISOString()` 取"今天"是 UTC 日期，北京时间 0~8 点取到昨天——一律用 `vault.ts` 的 `localDate()`/`localStamp()`。
 11. **publishVaultState 固化兜底值 = 幽灵登记 + 全局单槽登记多实例交叉污染**（v0.3.2 修复，2026-11-12 homevault 会话定位）：① 启动期把解析结果（含兜底默认 `~/Workspace/sun-vault`）无条件写进 `state.json`，默认路径被固化成登记值 → 首会话登记被 first-wins 挡死、会话工作目录级永不生效——新开空工作区（homevault）识别到的永远是旧 vault 的幽灵（此幽灵此前还恰好遮住了第二个 bug）。② 即便登记成功，全局单槽 `vault` 字段在多实例并存时交叉污染：homevault 实例登记后，主实例明早 08:45 晨报会读错库（DSH 会话按实例 boot cwd 分桶，vault 却是全局一个）。修复：兜底值**不落盘**（仅显式 env/config 才写全局槽）+ **workspaces 分桶映射**（`state.json` 的 `workspaces[<桶cwd>]=<vault>`，一桶一 vault）+ 无 cwd 调用方（source/watchdog）走 `vaultPathForHost()` 按实例进程 cwd 查桶。教训一：把"解析结果"当"登记值"持久化前，先分清值来自显式配置还是兜底默认；教训二：DSH 是多实例分桶架构，跨会话共享状态必须按桶键控，全局单槽必污染。
 12. **session/create 只传 cwd ≠ 入工作区**（v0.3.3 修复，2026-11-13 homevault 一键初始化定位）：`session/create` 契约是 `workspaceId` 或 `cwd` 二选一——`cwd` 只设置会话目录（文件桶 + header 都对），**不会** `attachSession` 进 workspace 的 `sessionIds`；UI 侧栏按 sessionIds 分组，网关建出来的会话于是显示为"未分组的会话"。正确姿势两步：`workspace/create {path}`（幂等解析目录 → workspaceId，工作区不存在则注册）→ `session/create {workspaceId, agentPreset}`（宿主只在 workspaceId 分支上 attachSession）。host 源码证据：dsh-api-session-controller `create()` 里 `if (workspace !== void 0) await workspace.attachSession(sessionId)`。教训：网关 RPC"看起来能用"（cwd 建出来的会话确实带对了目录）不等于契约语义完整——分组归属是另一层状态。
+13. **`tools/post-execute` 的第一个参数是 ToolExecution，不是 agent**（0.3.8 修复）：看门狗在册表以 agent 对象为键、却拿 `exec` 去查 → 活动计时从不刷新 → 存活超阈值的 Worker 不论是否在干活都被 interrupt。修法：在册表以会话 id 为键（宿主 `Agent.id === session.id`），纳管/刷新/出册三个事件统一用 `sessionIdOf()` 取键。教训：E2E 只验「停滞会触发」不够，必须同时验「活跃不被误停」——驱动 `apply()` 三事件 handler 的用例已入 vitest；verify ② 的 tsc 清单也已改为取自 src 目录（手写清单曾漏掉 `worker-watchdog.ts`）。真实宿主对照（onboarding 实例，阈值调到 25s）：已发布的 0.3.7 上，活跃 Worker（每 5s 一次工具调用）在 25.8s 被中断；修复后 12 次调用全部跑完，静默用例仍在 27s 被中断。
+14. **宿主 `workspaceFiles/read` 的 `range` 语义**：`offset` 从 1 起、`limit` 单位是**行**且上限 5000（超限直接报错、不夹取）、返回 `lines`/`eof`。旧实参 `limit: 8` 读 state.json——落盘格式下一条带 router 的登记就是 9 行，截断的 JSON 解析失败被 `catch` 吞掉 → 分桶登记与 `vaults[].router` 裁决静默失效、退到 updatedAt 兜底。修法：不传 limit、按 offset 翻页到 eof（`readPaged`），解析失败记入 `window.__sunSpaceDebug.errors`。回归：`tests/client.test.ts`（假宿主按行分页；`client.js` 首次可测——解析链挂在 `window.__sunSpaceDebug` 上）。教训：读小文件也别拍脑袋传 limit。
+15. **`vaults[]` 的 dir 同时是第 ④ 级解析的桶键**（0.3.8 修复）：`{"router": true}` 曾按会话工作目录落键——在非 vault 目录（仓库根、已有文件的 boot 桶）里跑 Router 自检，会让该目录凭一条登记变成整个工作区生效的 vault 根，绕过 `{"vault": true}` 的候选门控。修法：登记落在解析后的生效 vault 根上（`vaultPath(cwd)`）——不改变任何会话的解析结果，`config.json` 把库外置时也登记得上。**存量注意**：0.3.7 及之前若已留下 `{dir: <非 vault 的工作目录>, router}` 条目，它仍会让该目录被当成 vault 根——从 state.json 删掉该条目即可。
+16. **宿主右侧边栏边界有一条 10px 的隐形拖拽手柄**（`[data-width-handle=right]`，侧栏收起时也在）：横跨它的工作台按钮，几何中心被手柄截走，按中心点击静默无效（`document.elementsFromPoint` 可证）；侧栏 treeitem 的 locator click 超时同理。测试时点按钮左侧或用坐标点击，并用网关事件（`session/page`）确认动作真的发生——「点了」不等于「触发了」。

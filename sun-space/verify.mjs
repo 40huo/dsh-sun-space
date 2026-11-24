@@ -60,12 +60,12 @@ if (composed) {
 }
 
 // ---------- ② tsc 严格检查（抓补丁链丢声明，aliveRef 教训） ----------
+// 清单取自 src 目录而不是手写：手写清单漏过 worker-watchdog.ts（看门狗因此不在类型闸内）。
 section('② TypeScript 严格检查')
 try {
-  const files = ['index', 'router-tools', 'worker-guard', 'worker-vault', 'vault', 'vault-path', 'ambient']
-    .map(n => `src/${n}.ts`).join(' ').replace('src/ambient.ts', 'src/ambient.d.ts')
+  const files = readdirSync(join(ROOT, 'src')).filter(f => f.endsWith('.ts')).sort().map(f => `src/${f}`)
   execFileSync('npx', ['tsc', '--noEmit', '--strict', '--module', 'esnext', '--moduleResolution', 'bundler',
-    '--target', 'es2022', '--skipLibCheck', ...files.split(' ')],
+    '--target', 'es2022', '--skipLibCheck', ...files],
     { encoding: 'utf8', timeout: 120_000, cwd: ROOT })
   ok('tsc --strict 通过（无未定义引用/类型错误）')
 } catch (e) {

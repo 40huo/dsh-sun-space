@@ -202,7 +202,7 @@ export function apply(ctx: Context) {
 
   ctx.tools.register(def(
     'sun_state_write',
-    '插件状态登记（~/.dsh/state/sun-space/，零审批，值由系统从会话上下文派生，不接受手工传路径/id）：{"vault": true} 把当前会话工作目录登记为本工作区的 vault 根（仅空目录或已含 90-Meta 骨架的目录可登记；一桶一 vault 不影响其他工作区）；{"router": true} 把本会话登记为该知识库的当前 Router（轮换/自检修正的落点，v0.3.5 起替代 vault 内 90-Meta/system/state.json 自登记）。二者可各用一次。',
+    '插件状态登记（~/.dsh/state/sun-space/，零审批，值由系统从会话上下文派生，不接受手工传路径/id）：{"vault": true} 把当前会话工作目录登记为本工作区的 vault 根（仅空目录或已含 90-Meta 骨架的目录可登记；一桶一 vault 不影响其他工作区）；{"router": true} 把本会话登记为该知识库的当前 Router（登记落在当前生效的知识库根上，即 sun_state_read 的 resolvedVault，而非会话工作目录；轮换/自检修正的落点，v0.3.5 起替代 vault 内 90-Meta/system/state.json 自登记）。二者可各用一次。',
     {
       type: 'object',
       properties: {
@@ -217,10 +217,15 @@ export function apply(ctx: Context) {
         const sid = sessionIdOf(exec)
         if (!sid) return { ok: false, note: '无法从会话上下文提取本会话 id' }
         try {
-          const changed = setRouterSession(cwd, sid) // false = 同会话已登记（幂等）
+          // 登记落在"本会话实际生效的 vault 根"上，而不是会话工作目录。vaults[] 的 dir 同时是第 ④ 级
+          // 解析的桶键——按工作目录落键，一个非 vault 的工作目录（仓库根、已有文件的 boot 桶）会凭一条
+          // router 登记变成整个工作区生效的 vault 根，绕过 {"vault":true} 的候选门控（0.3.7 及之前）。
+          // 落在生效根上则不改变任何会话的解析结果；config.json 把库放在工作区之外时也登记得上。
+          const vault = vaultPath(cwd)
+          const changed = setRouterSession(vault, sid) // false = 同会话已登记（幂等）
           const snap = readStateSnapshot(cwd)
-          const entry = snap.state?.vaults?.find(e => e.dir === cwd) ?? null
-          return { ok: true, data: { bucket: cwd, router: entry?.router ?? null, changed, resolvedVault: snap.resolvedVault } }
+          const entry = snap.state?.vaults?.find(e => e.dir === vault) ?? null
+          return { ok: true, data: { vault, bucket: cwd, router: entry?.router ?? null, changed, resolvedVault: snap.resolvedVault } }
         } catch (e) {
           return { ok: false, note: String((e as Error).message).slice(0, 200) }
         }

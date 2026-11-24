@@ -208,7 +208,7 @@ gantt
 | TS 层 vault 机械巡检（逾期/Inbox 进轮询） | 先由 W-1 巡检清单覆盖，有真实痛点再做 |
 | Make 式指令 / 语音甩待办 / Channel 分主题 | W45 已记录，P3 后期 |
 | 生活领域分域（finance/health/learning） | backlog，巡检稳定运行一周后评估 |
-| **复审 P2 backlog（第三轮复审遗留）** | ① 块式 YAML 经 sun_vault_meta 重写丢字段（解析器只认扁平+行内数组）② 沙箱 fail-open 默认 → fail-closed + workspaceRoot 钉死 ③ worker-guard 字面量可绕（正则加固）④ 看板 Journal 反链扩近 7 天 ⑤ client/server 两套 frontmatter 解析器合一 |
+| **复审 P2 backlog（第三轮复审遗留）** | ① 块式 YAML 经 sun_vault_meta 重写丢字段（解析器只认扁平+行内数组）② 沙箱 fail-open 默认 → fail-closed + workspaceRoot 钉死 ③ ~~worker-guard 字面量可绕~~（✅ 0.3.8：归一化 + 按命令段取词判定，堵住引号/转义/大小写/旗标拆合/前置包装；PUT/PATCH 与 POST/DELETE 同列——守卫是纵深防御，未覆盖 `rm -r`、`find -delete`、pwsh 删除命令）④ 看板 Journal 反链扩近 7 天 ⑤ client/server 两套 frontmatter 解析器合一 |
 | 需求/缺陷数据源（P3-2） | **待用户输入**：公司工单系统是哪家（钉钉项目/云效/Jira/自建）→ 决定接入路线 |
 | npm bypass 令牌撤销 | CI 发版已通，本机 ~/.npmrc 令牌冗余——npmjs.com → Access Tokens 可撤销（撤销后本机直发需重新 login） |
-| npm 0.0.0-stage 占位版本清理 | 需 support 工单（通行密钥账号 CLI 无法 unpublish）；无害，latest 指向 0.2.3 |
+| npm 0.0.0-stage 占位版本清理 | 需 support 工单（通行密钥账号 CLI 无法 unpublish）；无害，latest 指向 0.3.7 |

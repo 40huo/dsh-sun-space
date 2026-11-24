@@ -8,7 +8,7 @@
 window.__ModuleLoader__.load({
   id: 'dsh-sun-space/client',
   factory(require) {
-    const D = { phase: 'factory-entered', errors: [], currentSessionId: null }
+    const D = { phase: 'factory-entered', errors: [], currentSessionId: null, vaultSource: null, routerSource: null }
     try {
       window.__sunSpaceDebug = D
       const React = require('react')
@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
       // vault 解析链（server 端 vault-path.ts 为唯一事实源）：config/分桶映射（workspaces[本工作区]）→
       // 约定布局发现；当前工作区无骨架时引导以工作区为根初始化（服务端登记仅放行空目录/已含骨架）。
       // 写回：① 创建会话后经 session/prompt 引导自登记（含 vault 字段）；② 晨报自检发现缺失/不一致自动修正。
-      const WB_REV = 'v24' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
+      const WB_REV = 'v25' // 根节点 data-wb-rev 版本标记：判别浏览器是否吃到旧 client.js（immutable 缓存坑，HANDOFF 踩坑 1）
 
       const STATUS_META = {
         proposed: { label: '待确认派发', color: '#9e9e9e' },
@@ -94,9 +94,40 @@ window.__ModuleLoader__.load({
       const gw = (method, args) => gateway(method, (GW_SHAPE[method] ?? (x => x))(args))
 
       // vault 读取通道：scope 是任一同工作区会话 id（workspaceFileScopeId 类型即 SessionId）
+      // ⚠️ 宿主 range.limit 的单位是「行」（且不得超过其 maxLines）——只做存在性探测时才传小 limit。
       const readVaultFile = (sessionId, path, limit) => gw('workspaceFiles/read', {
         workspaceFileScopeId: sessionId, path, range: { limit },
       }).then(v => v.text || '')
+
+      // 读完整文本：不传 limit 取页默认行数，按 offset 翻页到 eof 为止（enough 可提前止步）。
+      // 返回 { text, eof }。上限 200 页，防异常大文件拖垮工作台。
+      // 教训（0.3.7 及之前）：state.json 用 limit:8 读——落盘格式下一条带 router 的登记就是 9 行，
+      // 截断的 JSON 解析失败被 catch 吞掉，分桶登记与 vaults[].router 裁决双双静默失效。
+      async function readPaged(sessionId, path, enough = () => false) {
+        let text = ''
+        let offset = 1
+        for (let page = 0; page < 200; page++) {
+          const v = await gw('workspaceFiles/read', { workspaceFileScopeId: sessionId, path, range: { offset } })
+          if (page) text += '\n' // 宿主约定：页内各行以 \n 拼接、末尾无终止符 → 跨页补回换行
+          text += v?.text ?? ''
+          const eof = v?.eof !== false || !(v?.lines > 0)
+          if (eof || enough(text)) return { text, eof }
+          offset += v.lines
+        }
+        return { text, eof: false }
+      }
+      /** 任务笔记的头部读够了没：不以 --- 开头 = 没有 frontmatter（第一页即可停）；否则读到闭合的 --- 为止。 */
+      const frontmatterDone = (text) => !text.startsWith('---') || /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(text)
+      /** 读 JSON 状态文件：返回 { st } 或 { missing } 或 { bad }——解析失败必须可见，不得静默当作"没登记"。 */
+      async function readJsonState(sessionId, path) {
+        let text
+        try { text = (await readPaged(sessionId, path)).text } catch { return { missing: true } } // 文件不存在/不可读
+        try { return { st: JSON.parse(text) } } catch (e) {
+          const note = `${path.split('/').pop()} 不是合法 JSON（${path}）：${String(e?.message ?? e).slice(0, 120)}`
+          if (!D.errors.includes(note)) D.errors.push(note)
+          return { bad: true }
+        }
+      }
 
       // ===== vault 绝对路径发现（跨机器；呈现层不持常量，架构 §4.1 同款不变量）=====
       // 链：插件状态目录（config.json → state.json 的 vaults 登记/全局镜像）→ 会话 cwd 骨架 → 约定布局。
@@ -123,12 +154,16 @@ window.__ModuleLoader__.load({
         const homes = homesOf(items)
         for (const home of homes) {
           for (const file of ['config.json', 'state.json']) {
-            try {
-              const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/${file}`, 8)
-              const st = JSON.parse(raw)
-              if (myCwd.startsWith('/') && vaultEntriesOf(st).some(e => e.dir === myCwd)) return myCwd // 分桶登记（本工作区）
-              if (st?.vault && st.vault.startsWith('/')) return st.vault
-            } catch { /* 该文件不存在 → 下一个 */ }
+            const { st } = await readJsonState(scope, `${home}/.dsh/state/sun-space/${file}`)
+            if (!st) continue // 不存在，或不是合法 JSON（后者已记入 D.errors——不得静默当作"没登记"）
+            if (myCwd.startsWith('/') && vaultEntriesOf(st).some(e => e.dir === myCwd)) {
+              D.vaultSource = 'state.vaults[本工作区分桶登记]'
+              return myCwd // 分桶登记（本工作区）
+            }
+            if (st.vault && st.vault.startsWith('/')) {
+              D.vaultSource = `${file} → vault`
+              return st.vault
+            }
           }
         }
         // ② 会话 cwd 即 vault（用户"新建目录作为工作区并开会话"流：cwd 下有 90-Meta 即认定）
@@ -137,6 +172,7 @@ window.__ModuleLoader__.load({
           if (cwd && cwd.startsWith('/')) {
             await readVaultFile(scope, `${cwd}/90-Meta/runbook.md`, 2)
             D.vaultFoundNoField = cwd
+            D.vaultSource = '会话工作目录自带骨架'
             return cwd
           }
         } catch { /* 该 cwd 无 90-Meta → 约定兜底 */ }
@@ -146,6 +182,7 @@ window.__ModuleLoader__.load({
           try {
             await readVaultFile(scope, `${cand}/90-Meta/runbook.md`, 2)
             D.vaultFoundNoField = cand
+            D.vaultSource = '约定布局 ~/Workspace/sun-vault'
             return cand // 布局命中（骨架在即认定；旧 vault 内 system/state.json 已废弃，不再作裁决源）
           } catch { /* 该候选不存在 → 下一个 */ }
         }
@@ -164,22 +201,24 @@ window.__ModuleLoader__.load({
         // ① 插件状态 vaults[].router 裁决（v0.3.5 唯一登记点；指向列表内现存会话者胜）
         const scope = candidates[0].sessionId
         for (const home of homesOf(items)) {
-          try {
-            const raw = await readVaultFile(scope, `${home}/.dsh/state/sun-space/state.json`, 8)
-            const hit = vaultEntriesOf(JSON.parse(raw)).find(e => typeof e.router === 'string' && candidates.some(c => c.sessionId === e.router))
-            if (hit) return hit.router
-          } catch { /* 无该文件 → 下一个 */ }
+          const { st } = await readJsonState(scope, `${home}/.dsh/state/sun-space/state.json`)
+          if (!st) continue
+          const hit = vaultEntriesOf(st).find(e => typeof e.router === 'string' && candidates.some(c => c.sessionId === e.router))
+          if (hit) { D.routerSource = 'state.vaults[].router'; return hit.router }
         }
         // ② 过渡期兜底：旧 vault 内 90-Meta/system/state.json（v0.3.5 前自登记；已部署定时/runbook 仍可能写它）
         for (const s of candidates) {
           try {
-            const raw = await readVaultFile(s.sessionId, `${vault}/90-Meta/system/state.json`, 8)
-            const st = JSON.parse(raw)
-            if (st?.routerSession && candidates.some(c => c.sessionId === st.routerSession)) return st.routerSession
+            const st = JSON.parse((await readPaged(s.sessionId, `${vault}/90-Meta/system/state.json`)).text)
+            if (st?.routerSession && candidates.some(c => c.sessionId === st.routerSession)) {
+              D.routerSource = 'vault 内 state.json（旧）'
+              return st.routerSession
+            }
           } catch { /* 无 state.json 或不可读 → 走兜底 */ }
         }
         // ③ 兜底：最近活跃者（多 sun-router 并存时，列表顺序不可依赖）
         candidates.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+        D.routerSource = 'updatedAt 兜底'
         return candidates[0].sessionId
       }
 
@@ -292,7 +331,9 @@ window.__ModuleLoader__.load({
           let task = null
           if (vault && /^T-\d{8}-\d{2}$/.test(tid)) {
             try {
-              const fm = parseFrontmatter(await readVaultFile(routerSession, `${vault}/50-Tasks/${tid}.md`, 24))
+              // 只读到 frontmatter 闭合为止（旧实参 limit:24 行：字段多的笔记被截在 --- 之前 → 解析为空 → 误显示"无任务注解"）
+              const { text } = await readPaged(routerSession, `${vault}/50-Tasks/${tid}.md`, frontmatterDone)
+              const fm = parseFrontmatter(text)
               if (fm.id) task = { id: fm.id, status: fm.status || 'proposed', source: fm.source || '', artifacts: fm.artifacts || [] }
             } catch { /* 笔记缺失 → 无注解，不阻塞 */ }
           }
@@ -678,6 +719,10 @@ window.__ModuleLoader__.load({
           ]),
         ])
       }
+
+      // 诊断/测试缝：解析链可直接驱动（DevTools/Playwright 查 window.__sunSpaceDebug；
+      // tests/client.test.ts 经同一入口回归——函数在 JSON.stringify 时自然丢弃，不影响 sessionStorage 落盘）
+      Object.assign(D, { resolveVault, resolveRouterSession, loadTasks })
 
       return {
         inject: ['slots', 'uiWorkspace', 'layout'],

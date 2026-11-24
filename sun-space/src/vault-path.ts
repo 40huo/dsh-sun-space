@@ -36,7 +36,8 @@ export const DEFAULT_VAULT_DIRNAME = 'sun-vault'
  *  跟随 DSH_HOME：多实例（隔离 HOME 的测试环境）之间状态互不串扰。 */
 export const stateDir = () => join(process.env.DSH_HOME ?? homedir(), '.dsh', 'state', 'sun-space')
 
-/** 一库一条：dir = 库根（即桶目录），router = 该库当前 Router 会话（本机 id）。 */
+/** 一库一条：dir = 库根（默认即桶目录；config.json 把库外置时，router 登记落在外置库根上），
+ *  router = 该库当前 Router 会话（本机 id）。dir 同时是第 ④ 级解析的桶键——勿写入非 vault 的目录。 */
 export type VaultEntry = { dir: string; router?: string }
 type VaultState = { vault?: string; vaults?: VaultEntry[]; workspaces?: Record<string, string>; updatedAt?: string }
 
@@ -200,11 +201,14 @@ export function registerVaultRootFromSession(cwd: string | undefined, now = new 
   } catch { return false }
 }
 
-/** 登记某工作区（桶）的当前 Router 会话（sun_state_write {"router":true} 用）。
+/** 登记某知识库的当前 Router 会话（sun_state_write {"router":true} 用）。
  *  v0.3.5 起替代 vault 内 90-Meta/system/state.json 的 routerSession——会话 id 是本机状态，
- *  住宿主状态目录；同会话幂等，换会话即改绑（轮换落点）。 */
-export function setRouterSession(cwd: string | undefined, sessionId: string | undefined, now = new Date()): boolean {
-  if (!cwd || !cwd.startsWith('/') || typeof sessionId !== 'string' || !sessionId.startsWith('session-')) return false
+ *  住宿主状态目录；同会话幂等，换会话即改绑（轮换落点）。
+ *  ⚠️ vaultRoot 必须是**解析后的生效 vault 根**（调用方传 vaultPath() 的结果），不能是会话工作目录：
+ *  条目的 dir 同时是第 ④ 级解析的桶键，无条目时会新建 {dir, router}——拿非 vault 的工作目录来登记，
+ *  等于绕过候选门控把它登记成 vault 根。 */
+export function setRouterSession(vaultRoot: string | undefined, sessionId: string | undefined, now = new Date()): boolean {
+  if (!vaultRoot || !vaultRoot.startsWith('/') || typeof sessionId !== 'string' || !sessionId.startsWith('session-')) return false
   try {
     const dir = stateDir()
     mkdirSync(dir, { recursive: true })
@@ -213,12 +217,12 @@ export function setRouterSession(cwd: string | undefined, sessionId: string | un
     try { raw = readFileSync(p, 'utf8') } catch { /* 首次 */ }
     const state = parseState(raw) ?? {}
     const entries = vaultEntriesOf(state)
-    const hit = entries.find(e => e.dir === cwd)
+    const hit = entries.find(e => e.dir === vaultRoot)
     if (hit) {
       if (hit.router === sessionId) return false // 幂等
       hit.router = sessionId
     } else {
-      entries.push({ dir: cwd, router: sessionId })
+      entries.push({ dir: vaultRoot, router: sessionId })
     }
     writeState(p, state, entries, now)
     return true

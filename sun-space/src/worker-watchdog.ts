@@ -107,8 +107,10 @@ export function apply(ctx: Context) {
   const stallMs = parsePositiveMs(process.env.SUN_WATCHDOG_STALL_MS, DEFAULT_STALL_MS)
   const tickMs = parsePositiveMs(process.env.SUN_WATCHDOG_TICK_MS, DEFAULT_TICK_MS)
 
-  /** 在册表：agent 对象 → { key(id), parentId, at(最后活动时刻) }。Map 以便遍历；disposed 即删，不累积。 */
-  const watched = new Map<object, { id: string; parentId: string | undefined; at: number }>()
+  /** 在册表：会话 id → { parentId, at(最后活动时刻) }。Map 以便遍历；disposed 即删，不累积。
+   *  以 id 为键而非 agent 对象：tools/post-execute 带来的是 ToolExecution（exec.agent 才是 agent），
+   *  按对象查永远落空——0.3.7 及之前活动计时从不刷新，存活超阈值的 Worker 不论是否在干活都被停。 */
+  const watched = new Map<string, { parentId: string | undefined; at: number }>()
   let engagedNoted = false
 
   const log = (level: 'info' | 'warn', msg: string) => {
@@ -146,11 +148,11 @@ export function apply(ctx: Context) {
   }
 
   ctx.interval(() => {
-    for (const key of stalledKeys(watched, Date.now(), stallMs)) {
-      const entry = watched.get(key)
+    for (const id of stalledKeys(watched, Date.now(), stallMs)) {
+      const entry = watched.get(id)
       if (!entry) continue
-      watched.delete(key) // 先出册：停滞只处理一次
-      void handleStall(entry)
+      watched.delete(id) // 先出册：停滞只处理一次
+      void handleStall({ id, ...entry })
     }
   }, tickMs)
   ctx.effect(() => () => { /* interval 随 fiber 清理（timer 服务负责） */ })
@@ -164,8 +166,10 @@ export function apply(ctx: Context) {
       const header = (agent as { session?: { header?: Record<string, unknown> } })?.session?.header
       if (!shouldWatchHeader(header)) return
       const id = sessionIdOf(agent)
-      if (watched.has(agent)) { const e = watched.get(agent)!; e.at = Date.now(); return }
-      watched.set(agent, { id: id ?? '?', parentId: parentSessionOf(agent), at: Date.now() })
+      if (!id) { log('info', 'skipped: agent has no session id'); return } // 无 id 无从 interrupt，不入册（否则匿名项挤在同一键上）
+      const known = watched.get(id)
+      if (known) { known.at = Date.now(); return } // resume/compaction 会再次 agent/created：刷新计时
+      watched.set(id, { parentId: parentSessionOf(agent), at: Date.now() })
       if (!engagedNoted) {
         engagedNoted = true
         log('info', `engaged: watching sun-worker children (stall=${stallMs / 1000}s, tick=${tickMs / 1000}s)`)
@@ -175,12 +179,13 @@ export function apply(ctx: Context) {
     }
   })
 
-  // 活动信号：任何一次工具调用结束都刷新计时。⚠️ 这是瀑布——必须 return next()，
+  // 活动信号：任何一次工具调用结束都刷新计时。第一个参数是 ToolExecution（name/arguments/agent），
+  // 在册键取 exec.agent 的会话 id。⚠️ 这是瀑布——必须 return next()，
   // 否则全部工具调用的结果变 undefined（dsh-multitask 实测教训：七种工具全炸）。
   ctx.on('tools/post-execute', (...args: unknown[]) => {
-    const [exec, , next] = args as unknown as [unknown, unknown, () => unknown]
+    const [exec, , next] = args as unknown as [{ agent?: unknown } | undefined, unknown, () => unknown]
     try {
-      const entry = exec !== undefined && exec !== null ? watched.get(exec) : undefined
+      const entry = watched.get(sessionIdOf(exec?.agent) ?? '')
       if (entry) entry.at = Date.now()
     } catch { /* 刷新失败最多误停一个活跃 worker，不拦调用 */ }
     return next()
@@ -190,7 +195,8 @@ export function apply(ctx: Context) {
   ctx.on('agent/disposed', (...args: unknown[]) => {
     try {
       const payload = args[0] as { agent?: unknown } | undefined
-      if (payload?.agent !== undefined && payload.agent !== null) watched.delete(payload.agent)
+      const id = sessionIdOf(payload?.agent)
+      if (id) watched.delete(id)
     } catch { /* 内存里多一条记录，下次 tick 自然忽略 */ }
   })
 }
