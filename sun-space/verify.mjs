@@ -47,9 +47,20 @@ if (composed) {
   count('id: sun-space') === 1 ? ok('sun-space 插件行恰好 1 条') : fail('sun-space 插件行', `出现 ${count('id: sun-space')} 次`)
   count("id: sun-router-preset") === 1 ? ok('sun-router 预设声明恰好 1 条') : fail('sun-router 预设声明', `出现 ${count('id: sun-router-preset')} 次`)
   count("id: sun-worker-preset") === 1 ? ok('sun-worker 预设声明恰好 1 条') : fail('sun-worker 预设声明', `出现 ${count('id: sun-worker-preset')} 次`)
-  readFileSync(join(ROOT, 'src/router-tools.ts'), 'utf8').includes("agentPreset: 'sun-worker'")
-    ? ok('sun_route 子会话挂 sun-worker 预设（代码级，spec.request）')
-    : fail('sun_route 未挂 sun-worker 预设')
+  // 派发走官方委派工具的组合实例；宿主内部接口 startActivation 的参数形状随版本变（rc.1→rc.3 摊平过），
+  // 代码里不得再调。开发态看组合结果，分发态看 bundle.patch.yml 原文——终端用户拿到的就是它。
+  const routeInstance = /- id: sun-route\s+name: '@deepseek-ai\/dsh-tool-subagent'\s+config:\s+provider: spawn\s+toolName: sun_route\s+agentPreset: sun-worker\s+maxDepth: 1/
+  routeInstance.test(composed)
+    ? ok('sun_route = 官方 dsh-tool-subagent 实例（spawn / sun-worker / 深度 1，开发态组合）')
+    : fail('开发态组合缺 sun_route 官方委派工具实例')
+  routeInstance.test(readFileSync(join(ROOT, 'bundle.patch.yml'), 'utf8'))
+    ? ok('分发态 bundle.patch.yml 同样声明该实例')
+    : fail('分发态 bundle.patch.yml 缺 sun_route 官方委派工具实例')
+  // 匹配调用形式（.startActivation( ）而不是字样——注释里提到它不算违规
+  const internalCalls = readdirSync(join(ROOT, 'src')).filter(f => f.endsWith('.ts') && /\.startActivation\s*\(/.test(readFileSync(join(ROOT, 'src', f), 'utf8')))
+  internalCalls.length
+    ? fail(`宿主内部接口 startActivation 又被调起（${internalCalls.join('、')}）——派发必须走官方工具组合`)
+    : ok('派发路径不依赖宿主内部接口（src 内无 startActivation 调用）')
   readFileSync(join(ROOT, 'lib/index.mjs'), 'utf8').includes('worker-watchdog')
     ? ok('worker-watchdog 已构建进入口（实时盯 worker 卡死）')
     : fail('worker-watchdog 未构建进 lib/index.mjs')

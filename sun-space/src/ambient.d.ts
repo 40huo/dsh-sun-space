@@ -21,11 +21,15 @@ declare module '@deepseek-ai/cordis' {
       restrict(filter: { allow?: string[]; deny?: string[] }): () => void
     }
     subagents: {
-      startActivation(spec: Record<string, unknown>): Promise<{ childId?: string; name: string; result?: unknown; dispose?: () => void }>
-      /** 停掉一个子代理；authority 用 { kind:'ancestor', agent: 父agent } 形状（宿主做血缘校验） */
+      /**
+       * 停掉一个子代理；authority 用 { kind:'ancestor', agent: 父agent } 形状（宿主做血缘校验）。
+       * ⚠️ 这是宿主内部服务接口，签名会随宿主版本变（rc.1→rc.3：startActivation 的参数被摊平，手写的
+       * sun_route 包装因此崩溃）。派发一律走官方 dsh-tool-subagent 的组合实例，不要再新增对它的依赖。
+       */
       interrupt(childId: string, authority?: Record<string, unknown>): unknown
     }
-    /** 事件监听（cordis 冒泡：后代 scope 发出的事件可被祖先 scope 收到）。tools/post-execute 是瀑布，须 return next() */
+    /** 事件监听（cordis 冒泡：后代 scope 发出的事件可被祖先 scope 收到）。tools/post-execute 是瀑布，须 return next()；
+     *  session/event 是只读观察，参数为 (session, event)，宿主对监听器做异常隔离。 */
     on(event: string, handler: (...args: unknown[]) => unknown): void
     /** 调用期取宿主服务（可能取不到——调用方决定退路） */
     get<T = unknown>(service: string): T | undefined

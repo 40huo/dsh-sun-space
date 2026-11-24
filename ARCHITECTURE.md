@@ -2,10 +2,11 @@
 
 > **基于 DeepSeek Harness 的个人 AI 融合工作空间**
 >
-> 版本 v0.4.2 · 2026-11-08 · 状态：P0/P1 已实施，生产运行中；P2 收尾完成，P3 启动
+> 版本 v0.4.3 · 2026-11-24 · 状态：P0/P1 已实施，生产运行中；P2 收尾完成，P3 启动
 > **v0.4 变更**：对齐实现现实——业务定时已迁 DSH 原生自动化任务（代码零 cron，§5.3）；侧栏形态定稿为工作台单页（§8.6）；§4.1 补 sun_route 宿主薄包装与 Router 会话周期轮换决策（W45 反思）
 > **v0.4.1 变更**（第三轮复审）：§4.1 新增"会话 id 非常量"不变量与 state.json 事实源闭环；§8.6 删除拍板按钮行（22f88db 已删按钮，v0.4 误植回架构，已纠正）；§5.1/§2.1/§2.2/§2.3/§6.6/§9.1/附录 B4 全部对齐实现（一次改完，不留半途快照）
 > **v0.4.2 变更**（用户拍板）：工作台载体从侧栏单页迁至 Router 会话 tab（conversation.view 槽），侧栏入口删除、README 承担引导；新增定时任务表单内嵌工作台（target 自动绑当前会话，补原生 UI 无 session 选项缺口）；版本头相应更新
+> **v0.4.3 变更**（2026-11-24，桌面版派发崩溃后）：§4.1 的 `sun_route` 回到官方委派工具实例（组合声明），插件不再调宿主内部接口 `startActivation`；`session` 字段改由 `session/event` 事件回写（原则 4「DSH 原生优先」的落地）
 > **交接与现状**：新会话/接手请先读 [HANDOFF.md](HANDOFF.md)（当前状态、启动命令、机制速查、踩坑记录）
 > 本文档所在 workspace（`dsh-sun-space`）承载架构文档与未来的插件/技能代码；知识库本体是独立的 Obsidian vault，下文以 `<VAULT_PATH>` 指代。
 
@@ -195,7 +196,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
 - **定位**：常驻主会话，所有入口（桌面对话、钉钉机器人、Panel、Source 触发）都汇到这里。
 - **职责**：理解意图 → 分派任务 → 汇总结论 → 落库 → 对外发言（统一人格）。
 - **物理约束（`sun-router` 预设的工具白名单，而非仅提示词）**——LLM 想揽活也没有工具：
-  - `sun_route`：创建/唤醒 Worker 并分派任务（挂 task_id + prompt）；
+  - `sun_route`：官方委派工具 `@deepseek-ai/dsh-tool-subagent` 的实例（组合里钉死子代理预设为 `sun-worker`、深度 1）——创建 Worker 并分派任务；Router 按人格约定把小写 task_id 填进 `description`（宿主子代理清单的 label），可选 `cwd`；「唤醒」尚未实现；
   - `sun_read`：读 Trigger 队列、任务状态、vault 摘要（Inline：frontmatter + 首段）；
   - `sun_vault_write`：受限写入（仅 `00/40/50/90` 目录，Journal 独占）；
   - `sun_notify`：~~请求推送钉钉通知~~（0.3.6 移除——通知交给 DSH 通知类插件，决策提醒走原生 ask_user_question 卡）；
@@ -203,7 +204,7 @@ DeepSeek Harness 是"一切皆插件"的 Cordis 架构：插件即导出 `apply(
   - **无** Bash、文件、web、dws 直调——执行必须经 `sun_route` 交给 Worker。
 - **行为约束（runbook 语义层 + schedule prompt）**：Worker 结论必注明出处；IM ≤100 字、只问直接问题，仅在"需要决策或验收"时打扰；未经确认不得请求任何 always-ask 级动作（白名单会拒绝越权请求）。
 - **上下文组成**：`90-Meta/memory.md` + `90-Meta/runbook.md` + 当日 `40-Journal` + 当前任务状态表。历史细节靠 vault 链式召回。
-- **会话机制（W45 实证定稿）**：Router 单会话 + compaction 保持；`sun_route` 在宿主是**薄包装**——直调官方 `startActivation`（注意运行时 lib 的签名是 `spec.request` 包装，与 repo src 有漂移，以构建产物为契约源），子会话以 task_id 命名并把 childId 回写任务笔记 `session` 字段（工作台卡片直达）。新增**周期轮换**：会话年龄 >30 天或 subagentCatalog >50 条时，晨报自检附轮换建议（起草交接摘要 → 新会话冷启动 → schedule target 切换，人批后执行），已写入 runbook v0.3 §10。
+- **会话机制（W45 实证定稿）**：Router 单会话 + compaction 保持；`sun_route` **不是插件代码**——它是官方 `@deepseek-ai/dsh-tool-subagent` 的实例，在补丁里用组合声明（`toolName: sun_route` + `agentPreset: sun-worker` + `maxDepth: 1`），工具随宿主一起维护，插件不调任何宿主内部接口。曾有一版手写包装直调 `startActivation`，宿主 0.2.2-rc.3 改了它的参数形状后在桌面版上一调即崩（HANDOFF 踩坑 17）——**面向模型的契约才稳定，内部服务接口是宿主自己的实现细节**。子会话 id 由插件监听 `session/event` 回写任务笔记的 `session` 字段（审计留痕）；工作台跳转走宿主的子代理清单，不依赖该字段。新增**周期轮换**：会话年龄 >30 天或 subagentCatalog >50 条时，晨报自检附轮换建议（起草交接摘要 → 新会话冷启动 → schedule target 切换，人批后执行），已写入 runbook v0.3 §10。
 - **会话 id 非常量（v0.4.1 不变量，呈现层与轮换闭环）**：**任何代码不得硬编码 Router 会话 id**——轮换后旧 id 仍在会话列表里，常量必然漂移。当前会话的唯一事实源（v0.3.5 起）是插件状态 `~/.dsh/state/sun-space/state.json` 的 `vaults[].router`（一库一条 `{dir, router?}`）；vault 内 `90-Meta/system/state.json` 废弃为过渡期只读兜底——routerSession 是本机会话 id，随 vault 跨机迁移必然失效，住宿主状态目录才是对的。写回链路：① 初始化/补建指令经 `sun_state_write {"router": true}` 自登记（零审批，值由服务端从会话上下文派生）；② 晨报自检 `sun_state_read` 发现登记与本会话不符 → `sun_state_write {"router": true}` 修正（轮换自愈）。读取链路：工作台 `session/list`（sun-router 预设候选）→ 插件状态 `vaults[].router` 裁决 →（过渡期）旧 vault 内 state.json → 最近活跃兜底；`verify --smoke` ⑤ 断言全部生产 schedule 的 target 与解析出的当前会话对齐——漂移在自检爆，不在用户面前爆。
 
 > 证据（源码级）：dsh-superagent 原型 Router = 14 个 `orchestrator_*` 应用工具（`orchestrator_read / orchestrator_route / orchestrator_eval / orchestrator_reply / orchestrator_ticket_retry` 等，见 `src/app/tools/main.ts`）+ 7 个宿主工具（`skill, bash, read, read_image, job_*`）——其中 `bash` 被 noWait 守卫阉割为巡检级（禁 `sleep`、≤30s、job 等待 ≤5s，超时返回 `NO_WAIT`）。**本架构的 `sun-router` 更严：完全不配 bash**，dws 数据一律经 Source 与 Worker。原型的工具面由 `tests/model-surface.spec.ts` 固化。
@@ -357,7 +358,7 @@ sun-space/
 ├── src/
 │   ├── index.ts        # 插件入口：装配 Source / router-tools / worker-vault
 │   ├── source.ts       # dws 轮询 Source：exec dws 单次命令 → diff → trigger 队列 + 探活告警 + TTL 清理
-│   ├── router-tools.ts # 5 个 sun_* 应用工具（sun_route 为宿主薄包装，§4.1）
+│   ├── router-tools.ts # 5 个 sun_* 应用工具 + session 字段事件回写（sun_route 是官方委派工具实例，见 cordis.patch.yml）
 │   ├── worker-vault.ts # Worker 受控产物落库通道（sun_artifact_write）
 │   ├── worker-guard.ts # Worker 命令黑名单守卫（§4.2/§9.1）
 │   ├── vault.ts        # 路径白名单（读/写分级）+ frontmatter 解析/序列化
@@ -702,7 +703,7 @@ export function apply(ctx: Context) {
 
 ```yaml
 # cordis.patch.yml —— 预设与工具白名单在补丁里声明（非 TS 文件；sun_router 只保留 sun_* 应用工具，无 Bash）
-# sun-router preset: tools = [sun_read, sun_vault_write, sun_vault_meta, sun_state_read, sun_state_write, sun_route(subagents)]（sun_notify 已于 0.3.6 移除）
+# sun-router preset: tools = [sun_read, sun_vault_write, sun_vault_meta, sun_state_read, sun_state_write, sun_route(官方 dsh-tool-subagent 实例)]（sun_notify 已于 0.3.6 移除）
 # sun-worker preset: tools = WORK_TOOLS 白名单 + worker-guard 命令黑名单（worker-guard.ts）
 # 沙箱：additionalWritableRoots 含 dws 配置目录（dws 只读查询免 EPERM）
 ```

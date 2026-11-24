@@ -107,3 +107,21 @@ export function updateFrontmatter(
   const fm = serializeFrontmatter(merged)
   return hadMeta ? `${fm}${body}` : `${fm}\n${body}`
 }
+
+/** 字段名里需要转义的正则元字符。 */
+const RX_SPECIAL = /[.*+?^${}()|[\]\\]/g
+
+/** 只改 frontmatter 里的一个字段行，其余内容逐字节保留。
+ *  与 updateFrontmatter 的区别：后者把整块 frontmatter 解析后重新序列化，块式数组等它不认识的写法会丢
+ * （WORKPLAN 复审 backlog ①）；"顺手补一个字段"的回写不能冒这个险。
+ *  已有该字段行 → 原地替换；没有 → 插在闭合 --- 之前；整篇没有 frontmatter → 头部补一块。
+ *  value 原样写入，仅用于不需要引号的简单标量（会话 id 等）。 */
+export function setFrontmatterField(text: string, key: string, value: string): string {
+  const line = `${key}: ${value}`
+  const m = /^---(\r?\n)([\s\S]*?)(\r?\n)---(\r?\n|$)/.exec(text)
+  if (!m) return `---\n${line}\n---\n${text}`
+  const [, openNl, inner, closeNl, trailingNl] = m
+  const existing = new RegExp(`^${key.replace(RX_SPECIAL, '\\$&')}:[^\\r\\n]*`, 'm')
+  const nextInner = existing.test(inner) ? inner.replace(existing, () => line) : inner ? `${inner}${closeNl}${line}` : line
+  return `---${openNl}${nextInner}${closeNl}---${trailingNl}${text.slice(m[0].length)}`
+}

@@ -1,7 +1,7 @@
 # HANDOFF —— 新会话交接文档
 
 > 新开 AI 会话（或人接手）时，把本文件全文丢给对方即可接续工作。
-> 最后更新：2026-11-24 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
+> 最后更新：2026-11-25 · 维护纪律：每次实质变更后更新本文件（借鉴 dsh-session-superagent 的 HANDOFF 实践）。
 
 ## 一、这个项目是什么
 
@@ -17,15 +17,15 @@
 | 模块 | 状态 | 证据 |
 |---|---|---|
 | 生产定时 | ✅ 晨报周一 08:45 / 日报 18:30 / **Watchdog 14:00+21:00** / **周复盘周五 17:00**，全部指向生产会话 `session-1f42b48a` | schedule-8037f230 / f221eae6 / 104a7328 / 5b5d6ebd |
-| 插件（sun-space） | ✅ 双预设 + 7 工具 + 初始化检查面板（dws 轮询 Source 已于 0.3.6 移除——不 AI native；外部感知由 Router 定时任务内按需 dws 查询） | lib/*.mjs（tsdown 构建） |
+| 插件（sun-space） | ✅ 双预设 + 5 个 sun_* 工具 + 初始化检查面板；**派发走官方委派工具实例 `sun_route`（组合声明；0.3.9 起不再手写包装调宿主内部接口 startActivation——见踩坑 17）**（dws 轮询 Source 已于 0.3.6 移除——不 AI native；外部感知由 Router 定时任务内按需 dws 查询） | lib/*.mjs（tsdown 构建） |
 | 工作台（UI 名「孙学空间」） | ✅ **Router 会话上的 tab**（conversation.view 槽，三分栏 总览/定时任务/设置；新用户三步启用引导卡；定时任务模板速建；**派活树 v24：数据源 = 宿主 `session/projections` 的 `subagentCatalog`（子代理清单，label=task_id）+ session/list 的 `subagentTiming` join（运行中/已结束），vault 任务笔记仅作可选注解（读失败降级不缺树）——不再依赖今日 Journal，读错误显式化**；设置页显示 子智能体 N/50 轮换线）。**v25（0.3.8）**：状态文件按行分页读到 eof（旧实参 limit:8 截断，见踩坑 14）、解析失败记入调试对象 | ✅ 浏览器 E2E（v25，onboarding 测试实例：三步启用 → 一键初始化 → 完整工作台三页；`data-wb-rev="v25"`、`__sunSpaceDebug.errors` 为空） |
 | ask 决策卡 | ✅ 定时触发 → 原生询问卡 → 点选 → 分支路由 全链路实测 | 22:53-22:56 会话记录 |
 | runbook | **v0.3**（§6 考勤过滤已生效、§10 派发预算+轮换触发线） | `sun-vault/90-Meta/runbook.md` |
-| 架构文档 | **v0.4**（2026-11-08 对齐现实：原生 schedule 定时 / 工作台定稿 / 轮换与 sun_route 薄包装） | ARCHITECTURE.md 头部变更注记 |
+| 架构文档 | **v0.4.3**（2026-11-24：`sun_route` 回到官方委派工具实例，插件不调宿主内部接口；v0.4：原生 schedule 定时 / 工作台定稿 / 轮换） | ARCHITECTURE.md 头部变更注记 |
 | schemas.md | 契约修订：日期一律本地时间无时区后缀（时区显示 bug 根因） | `sun-vault/90-Meta/schemas.md` |
-| 单元测试 | ✅ 106 用例（0.3.8：+ 看门狗 `apply()` 全链路、`client.js` 解析链、`sun_state_write` 工具级、守卫拼写变体；此前 40） | `pnpm test` |
-| composition 自检 | ✅ verify.mjs（①dump-config 断言 ②tsc 严格 ③vitest ④roster 烟雾可选） | `pnpm verify` |
-| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.3.8，GPL-3.0-or-later）。发版 = commit 后 `npm version patch` + push tag，CI Trusted Publishing 自动发布（OIDC 无令牌 + provenance + 三道闸：tag↔版本硬校验 / 已发布跳过 / actions 钉 SHA）。他机安装：`dsh plugin --profile web add dsh-sun-space`。踩坑：pnpm12 构建白名单= `pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃）；Trusted Publisher 须勾 **Allow npm publish**（stage 默认放行、publish 要显式授权）；通行密钥账号 CLI 无法做 unpublish 等高危动作（需令牌或网页）；校验步骤必须带 `working-directory: sun-space`（仓库根无 package.json） | README「在其他电脑安装」 |
+| 单元测试 | ✅ 119 用例（0.3.9：+ session 字段事件回写、setFrontmatterField；0.3.8：+ 看门狗 `apply()` 全链路、`client.js` 解析链、`sun_state_write` 工具级、守卫拼写变体；此前 40） | `pnpm test` |
+| composition 自检 | ✅ verify.mjs（①组合断言：开发态 dump-config **与分发态 bundle.patch.yml** 都要有官方委派工具实例 `sun_route`，且 src 内不得出现 `startActivation` 调用 ②tsc 严格 ③vitest ④构建新鲜度 ⑤实例烟雾可选） | `pnpm verify` |
+| npm 包分发 | ✅ **npm 公共包 `dsh-sun-space`**（latest 0.3.9，GPL-3.0-or-later；0.3.8 及之前在宿主 ≥ 0.2.2-rc.3（桌面版 App）上 `sun_route` 派发即崩）。发版 = commit 后 `npm version patch` + push tag，CI Trusted Publishing 自动发布（OIDC 无令牌 + provenance + 三道闸：tag↔版本硬校验 / 已发布跳过 / actions 钉 SHA）。他机安装：`dsh plugin --profile web add dsh-sun-space`。踩坑：pnpm12 构建白名单= `pnpm-workspace.yaml` 的 `allowBuilds:` 映射（package.json pnpm 字段已废弃）；Trusted Publisher 须勾 **Allow npm publish**（stage 默认放行、publish 要显式授权）；通行密钥账号 CLI 无法做 unpublish 等高危动作（需令牌或网页）；校验步骤必须带 `working-directory: sun-space`（仓库根无 package.json） | README「在其他电脑安装」 |
 | 下一阶段计划 | ✅ 落档 WORKPLAN.md §8（W-1 Watchdog → W-2 周复盘 → P3 启动） | WORKPLAN.md §8 |
 
 ## 三、怎么启动/重启
@@ -44,27 +44,37 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 - 改 **宿主 TS**（router-tools/source 等）→ `cd sun-space && pnpm build` → 重启实例
 - 改 **cordis.patch.yml** → 重启实例
 - 每次改完：`pnpm verify`（composition 自检，30 秒）
-- **onboarding 测试实例**（隔离的 `DSH_HOME`，自带凭证/会话/插件状态，可放心做 E2E）：
-  ```bash
-  cd ~/Documents/dsh-onboard-demo
-  DSH_HOME=$PWD/.dsh-home SUN_WATCHDOG_STALL_MS=25000 SUN_WATCHDOG_TICK_MS=5000 \
-    dsh --profile onboarding --port 3081 --no-open   # token 在启动输出首行
-  ```
-  profile 里装的是带 0.3.8 修复的构建：发布前用本地 tarball（`builds/dsh-sun-space-0.3.7.tgz`，内容即仓库源码，仅版本号未 bump）。改代码后重新 `npm pack --pack-destination ~/Documents/dsh-onboard-demo/builds`，再 `dsh plugin --profile onboarding add <tgz>`——同路径覆盖 pnpm 可能不重新解析，换文件名或子目录更稳妥。要与 npm 对齐：`dsh plugin --profile onboarding add dsh-sun-space@<版本>`。网关脚本鉴权同 verify ⑤；`session/create`、`session/prompt`、`workspace/create`、`session/projections` 的 args 要包一层 `request`（`session/list` 是 `_request`）；会话历史用 `session/page`（子会话地址为 `{kind:'subagent', parentSessionId, childSessionId, mode}`，其 id 是裸 UUID）。注意浏览器端读不到 `DSH_HOME` 里的状态目录（见 §五）。
+- **E2E 环境**（两套，都是隔离的，可放心跑）：
+  - **rc.1**（npx 缓存里的旧宿主）：`~/Documents/dsh-onboard-demo`，自带凭证/会话/插件状态
+    ```bash
+    cd ~/Documents/dsh-onboard-demo
+    DSH_HOME=$PWD/.dsh-home SUN_WATCHDOG_STALL_MS=25000 SUN_WATCHDOG_TICK_MS=5000 \
+      ~/.npm/_npx/1e7f6d9597241db0/node_modules/.bin/dsh --profile onboarding --port 3081 --no-open   # token 在启动输出首行
+    ```
+    profile 里装的是本地 tarball `builds/dsh-sun-space-0.3.8.tgz`（内容即仓库源码，仅版本号未 bump）。改代码后 `npm pack --pack-destination ~/Documents/dsh-onboard-demo/builds`，再 `dsh plugin --profile onboarding add <tgz>`——同路径覆盖 pnpm 可能不重新解析，换文件名或子目录更稳妥。
+  - **npm 最新宿主**（2026-11-24 为 0.2.2-rc.5；npx 缓存 `~/.npm/_npx/63d4cff42d507497`）。**用完即删**——这个 home 里要放一份测试凭证的副本：
+    ```bash
+    T=~/Documents/dsh-onboard-demo; H=$T/rc5-home; W=$T/rc5-ws; mkdir -p $H $W
+    cp -p $T/.dsh-home/.credentials.yaml $H/                    # 测试凭证
+    cd $W && DSH_HOME=$H ~/.npm/_npx/63d4cff42d507497/node_modules/.bin/dsh plugin --profile web add $T/builds/<tgz>
+    DSH_HOME=$H SUN_WATCHDOG_STALL_MS=25000 SUN_WATCHDOG_TICK_MS=5000 \
+      ~/.npm/_npx/63d4cff42d507497/node_modules/.bin/dsh --profile web --port 3082 --no-open
+    ```
+  - 网关脚本鉴权同 verify ⑤；`session/create`、`session/prompt`、`workspace/create`、`session/projections` 的 args 要包一层 `request`（`session/list` 是 `_request`）；会话历史用 `session/page`（子会话地址为 `{kind:'subagent', parentSessionId, childSessionId, mode}`，其 id 是裸 UUID）。注意浏览器端读不到 `DSH_HOME` 里的状态目录（见 §五）。
 
 ## 四、关键机制速查
 
 | 机制 | 要点 |
 |---|---|
 | 双预设 | sun-router（只分派）/ sun-worker（只执行）——工具白名单由组合保证；Worker 预设是内部组件（模式选择器中标注"无需手选"） |
-| sun_route | 宿主薄包装：startActivation 直调（spec.request 包装！）、task_id 命名子会话、childId 回写任务笔记、可选 cwd 透传（见"Worker 跨目录"） |
+| sun_route | **官方 `@deepseek-ai/dsh-tool-subagent` 的实例**（cordis.patch.yml / bundle.patch.yml 里组合声明：`provider: spawn`、`toolName: sun_route`、`agentPreset: sun-worker`、`maxDepth: 1`）——子代理预设与深度由组合钉死，未配 `allowedAgentPresets` 时模型不能改选；工具随宿主一起维护，插件不调任何宿主内部接口（0.3.9 起，见踩坑 17）。模型侧参数：`prompt`、`description`、`cwd`（rc.3 起另有 `name`）。**Router 人格约定：`description` 填小写 task_id**——宿主子代理清单的 label 就是它，工作台靠它把子代理行对上任务笔记。**`session` 字段回写**：`router-tools` 在预设作用域监听宿主事件 `session/event`，Router 会话每追加一条 `subagent/catalog {childId, label}` 就把 childId 写进 `50-Tasks/<TASK_ID>.md`（`setFrontmatterField` 只改那一行；同步落盘，先于派发返回）。返回值随宿主版本不同：rc.1 给子会话 id，rc.3 起只给名称——所以 id 不能指望模型自己回写 |
 | **会话 id 非常量** | **禁止硬编码 Router 会话 id**（v0.4.1 不变量）。唯一事实源（v0.3.5 起）：插件状态 `~/.dsh/state/sun-space/state.json` 的 `vaults[].router`（一库一条 `{dir, router?}`；vault 内 `90-Meta/system/state.json` 废弃，过渡期只读兜底——routerSession 是本机会话 id，随 vault 跨机迁移必然失效，本就该住宿主状态）；工作台解析链 = session/list(sun-router) → 插件状态 vaults[].router 裁决 → 旧 vault 内 state.json 兜底 → updatedAt 最新；写回 = 初始化/补建指令 `sun_state_write {"router": true}` + 晨报自检 `sun_state_read` 比对修正；verify --smoke ⑤ 断言 schedule target 对齐 |
-| 子会话跳转 | 工作台卡片 → openSession(task.session 裸 uuid)；**测试必须用 cua/Playwright 真实点击**（el.click() 缺指针序列会静默无效） |
+| 子会话跳转 | 工作台派活树 → openSession(宿主子代理清单里的子会话 id，裸 UUID)；任务笔记的 `session` 字段只是审计留痕，工作台不依赖它。**测试必须用 cua/Playwright 真实点击**（el.click() 缺指针序列会静默无效） |
 | 定时 | 业务定时全部在 DSH 原生 schedule（晨报/日报/Watchdog/周复盘，代码零 cron）；dws 轮询 Source 已移除（0.3.6），外部感知由 Router 定时任务内按需 dws 查询，trigger 队列仅剩 watchdog 停滞事件。**三层分工**：任务 prompt 只写指令（薄引用 runbook §N）｜人格在 preset `persona.prefix`（补丁分发，零维护）｜规则在 runbook。**target 治理走程序化路径**：API target 有 `session`（固定已有会话）/`new_once`/`new` 三种，UI 只暴露后两个——**新增/改靶/删除用 `pnpm sun:schedule`（scripts/schedule-cli.mjs：list/add/retarget/rm，target 自动绑解析出的当前 Router 会话——插件状态 vaults[].router 裁决 → 旧 vault 内 state.json 兜底 → updatedAt；vault 解析与插件六级链同源——含 vaults 分桶与桶目录骨架探测；多实例时 `SUN_DSH_LOG` 指向对应 launch 日志）**；UI 面板用于查看/启停/改时间 |
 | **孙学空间引导（v23）** | 两步启用（①插件确认 ②一键初始化：Router 会话 + 知识库，零审批）+ 补建骨架兜底 + 定时模板速建 + 跨工作区提示 + **预设复用（建会话时手选 Sun Router → 工作台认领本会话，"初始化知识库（本会话）"零新建）**；vault 解析六级（v0.3.2）：SUN_VAULT → config.json → **会话目录（含 90-Meta 骨架才算）** → **vaults 分桶登记（v0.3.5 起一库一条 `{dir, router?}`，一桶一 vault 多实例互不污染；首个 sun-router 会话在空目录/骨架目录创建时登记；旧 workspaces 自映射读兼容、写时迁移）** → 全局 vault 镜像 → 约定路径；无 cwd 调用方走 `vaultPathForHost()`（实例进程 cwd 查桶）；⑥ 兜底值**不落盘**（防幽灵登记，见踩坑 11）；**状态文件唯一化（v0.3.5）**：全系统只保留 `~/.dsh/state/sun-space/state.json`，vault 内 `90-Meta/system/state.json` 停写废弃（routerSession 迁至 `vaults[].router`）；**状态工具对**：`sun_state_read`（config/state/resolvedVault 诊断视图）+ `sun_state_write {"vault":true}`（分桶登记）/`{"router":true}`（本会话登记为该库 Router——晨报/Watchdog 自检修正落点，取代旧 sun_vault_write 改 state.json）；**伴生通知插件（v0.3.6，推荐非捆绑）**：`@lyhalal/dsh-notification-center` 一行命令独立安装（`dsh plugin --profile web add @lyhalal/dsh-notification-center`，自带 bundle 自激活）；**不可随包分发**——其 peer（`@deepseek-ai/dsh-client-*`）公共 npm 无稳定版仅预发道，做 dependencies 会让终端用户 `dsh plugin add dsh-sun-space` 解析失败（2026-11-19 CI 实测 ERR_PNPM_OUTDATED_LOCKFILE/resolve 失败）；sun_notify/钉钉通道/dws 轮询均已移除 |
 | **发版方式** | GitHub Release 驱动：`npm version patch && git push --tags` → CI 自动 npm 发布 + gh release create（自动更新日志）；仓库工作流权限已设 read-write（GITHUB_TOKEN 建 Release 需要） |
 | **Worker 实时看门狗** | `worker-watchdog.ts`（全局 scope，事件冒泡）：盯 sun-worker 委派子代理，`tools/post-execute` 刷新计时，无活动 >15 分钟（`SUN_WATCHDOG_STALL_MS` 可调/`SUN_WATCHDOG_DISABLED=1` 关闭）→ trigger 落盘 + urgent 通知 + interrupt 停掉 → settled 唤醒 Router。与 Watchdog 定时巡检互补：实时救火 + 定时清点。E2E 已验证（stall 触发→Router 被唤醒转述"被中途停止"） |
-| Worker 跨目录 | `sun_route` 可选 `cwd`（绝对路径，如仓库根）——沙箱可写区**自动跟随会话 cwd**（patch 里 `workspaceRoot` 只是无 cwd 时的兜底）；产物落库仍走 `sun_artifact_write`（vault 绝对路径，与 cwd 无关） |
+| Worker 跨目录 | `sun_route` 可选 `cwd`（官方工具参数；相对路径按调用者当前目录解析）——沙箱可写区**自动跟随会话 cwd**（patch 里 `workspaceRoot` 只是无 cwd 时的兜底）；产物落库仍走 `sun_artifact_write`（vault 绝对路径，与 cwd 无关） |
 | 初始化检查 | 三行检查（①vault ②依赖插件 ③Router 会话）**三项全绿才进看板**（只缺 ③ 也要出面板）；① 需要 ③ 的会话作 workspaceFiles scope；agentPresets/list 参数为**空 args** |
 | cwd 语义 | session/list 的 cwd 是**工作区分桶路径**（boot cwd），不是 vault——"Router 会话落在知识库目录"是误解，别拿 cwd 过滤会话 |
 | 时区 | 一律 `vault.ts` 的 `localDate()`/`localStamp()`（无时区后缀本地时间）；toISOString 是 UTC（差 8h/取错天）双坑 |
@@ -92,13 +102,16 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 - **没有 push/PR 的 CI**：`pnpm verify` 只能手跑；⑤ 烟雾的 Router 解析只按 updatedAt（不读登记）、日志路径写死。
 - **触发文件无清理**：TTL 清理随 `source.ts` 一并删除，看门狗仍在写；`sun_read tasks` 每次读全部任务笔记、无过滤无上限。
 - **守卫未覆盖**：`rm -r`（不带强制）、`find -delete`、`pwsh` 的 `Remove-Item -Recurse -Force`；守卫只检查 bash/pwsh/job_output，属纵深防御而非安全边界。
+- **桌面版（宿主 rc.3）未实跑验证**：0.3.9 的原生派发在 rc.1、rc.5 上实测通过；rc.3 的官方工具契约与 rc.5 逐字一致，但没在真机上跑过——升级 0.3.9 后在 App 里点一次派发确认。
+- **看门狗的 `interrupt` 仍调宿主内部接口**：rc.1 / rc.3 / rc.5 签名一致，但它和 `startActivation` 同属内部接口。若日后失效，表现是「停滞不再被停」，不会误停。
+- **`description` 填 task_id 是提示词约定**：Router 不照约定时，工作台那一行显示「无任务注解」、`session` 不回写，派发本身不受影响。rc.1 / rc.5 各 2 次实测（测试指令里不提 description），Router 均照做。
 
 ## 六、踩坑记录（勿重蹈）
 
 1. **浏览器 immutable 缓存**：combo rev 非内容哈希——client.js 改后若 rev 未变，浏览器吃旧缓存体。判别手段：工作台根节点 `data-wb-rev="vN"` 版本标记（不可见，Playwright/DevTools 可查，改 client.js 时同步 bump）+ 错误边界兜底。
 2. **el.click() 缺指针序列**：对 DSH 组件静默无效——UI 测试必须走 Playwright/cua 真实点击。
 3. **网关参数形状**：各 remote 方法 args 形状不一（agentPresets/list 空对象、schedule/* 带 request、session/list 带 _request）——以实际探测为准，勿照搬。
-4. **npx 构建产物与 repo 源码有漂移**：以运行时 lib 为契约源（startActivation 的 spec.request 包装差异）。
+4. **宿主内部接口会随版本变**：本机同时存在三份宿主——npx 缓存 rc.1、桌面版 App rc.3、npm latest rc.5，`startActivation` 的参数在 rc.3 被摊平（见踩坑 17）。**插件只依赖面向模型的契约**：官方工具的组合配置、公开事件（`agent/created`、`session/event`、`tools/post-execute`）。
 5. **会话按工作区分桶**：实例 boot cwd 决定会话存储桶——"会话列表空"先查桶再查数据。
 6. **bundle 覆写基础行 = 运行中宿主拒绝一切管理操作**（已解决）：曾为 dws 白名单覆写 dsh-sandbox-policy 行，bundle-in-use 守卫（按 id+name 比对运行中条目）因此拒绝安装/升级/卸载。0.2.4 起 bundle.patch.yml 移除覆写（运行期管理畅通），白名单仅保留在本机开发态 cordis.patch.yml；他机 Worker 的 dws EPERM 由 persona 指示的 DWS_CONFIG_DIR 自愈兜底（实测凭证在 Keychain，换配置目录不丢认证）。教训：bundle 覆写基础组件行 = 与常驻组件绑定 id+name，管理操作永久撞 bundle-in-use——分发 patch 尽量只贡献自有行。
 10. **包名改名必须同步 client 注册 id**：client.js 的 `__ModuleLoader__.load({ id: 'dsh-sun-space/client' })` 经 stripClientSuffix 对齐 package.json name 后注册 factory——id 与包名不一致时报 "loaded without registering"，客户端静默全挂（Failed to load plugins），服务端无任何报错。
@@ -111,3 +124,5 @@ cd /Users/40huo/Documents/deepseek-harness/default-workspace
 14. **宿主 `workspaceFiles/read` 的 `range` 语义**：`offset` 从 1 起、`limit` 单位是**行**且上限 5000（超限直接报错、不夹取）、返回 `lines`/`eof`。旧实参 `limit: 8` 读 state.json——落盘格式下一条带 router 的登记就是 9 行，截断的 JSON 解析失败被 `catch` 吞掉 → 分桶登记与 `vaults[].router` 裁决静默失效、退到 updatedAt 兜底。修法：不传 limit、按 offset 翻页到 eof（`readPaged`），解析失败记入 `window.__sunSpaceDebug.errors`。回归：`tests/client.test.ts`（假宿主按行分页；`client.js` 首次可测——解析链挂在 `window.__sunSpaceDebug` 上）。教训：读小文件也别拍脑袋传 limit。
 15. **`vaults[]` 的 dir 同时是第 ④ 级解析的桶键**（0.3.8 修复）：`{"router": true}` 曾按会话工作目录落键——在非 vault 目录（仓库根、已有文件的 boot 桶）里跑 Router 自检，会让该目录凭一条登记变成整个工作区生效的 vault 根，绕过 `{"vault": true}` 的候选门控。修法：登记落在解析后的生效 vault 根上（`vaultPath(cwd)`）——不改变任何会话的解析结果，`config.json` 把库外置时也登记得上。**存量注意**：0.3.7 及之前若已留下 `{dir: <非 vault 的工作目录>, router}` 条目，它仍会让该目录被当成 vault 根——从 state.json 删掉该条目即可。
 16. **宿主右侧边栏边界有一条 10px 的隐形拖拽手柄**（`[data-width-handle=right]`，侧栏收起时也在）：横跨它的工作台按钮，几何中心被手柄截走，按中心点击静默无效（`document.elementsFromPoint` 可证）；侧栏 treeitem 的 locator click 超时同理。测试时点按钮左侧或用坐标点击，并用网关事件（`session/page`）确认动作真的发生——「点了」不等于「触发了」。
+17. **不要绕过官方工具去调宿主内部接口**（0.3.9 修复；2026-11-24 桌面版派发崩溃）：0.3.8 及之前 `sun_route` 是手写包装，直接调 `ctx.subagents.startActivation({ …, request: { parent, … } })`。宿主 0.2.2-rc.3 把参数摊平成 `spec.parent`，包装在桌面版上一调即崩（`Cannot read properties of undefined (reading 'id')`，堆栈在 `dsh-subagent/lib/index.js` 的 `startActivation`）——而本机 npx 宿主还是 rc.1，E2E 全绿，完全测不出来。修法：回到 v0.1 的做法，`sun_route` 就是官方 `@deepseek-ai/dsh-tool-subagent` 的实例（组合里 `toolName: sun_route` + `agentPreset: sun-worker` + `maxDepth: 1`），删掉包装；`session` 字段改由预设作用域的 `session/event` 监听回写（宿主向 Router 会话追加 `subagent/catalog {childId, label}`）。官方工具的配置表在 rc.1 / rc.3 / rc.5 三版间一字未变，变的只有内部接口。教训一：**面向模型的契约才稳定，内部服务接口是宿主自己的实现细节**（README 原话：需要等待结果的程序调用方才直接用服务）；教训二：本机 npx 宿主可能落后于用户实际在用的版本（桌面版自带一份），E2E 至少覆盖「最旧」和「npm 最新」两端；教训三：诊断派发故障先解压会话日志取堆栈——`~/.dsh/sessions/<桶>/<会话>/session.v4.jsonl.zstd` 是多个 zstd 帧首尾相接，一次性解压只出第一帧，要按帧边界逐帧解。
+18. **「卸载/更新要重启」是宿主对带预设插件的固有行为，与 patch 里的官方委派工具行无关**（2026-11-25 实测，rc.1 与 rc.5）：曾担心 `bundle.patch.yml` 里插入 `@deepseek-ai/dsh-tool-subagent` 实例会让插件「停不掉、无法更新」。用插件管理器的正式接口（`pluginManager/removeBundle` / `setBundleEnabled` / `installBundle`）对照实测：**卸载在任何状态下都成功**——未派发、只建了 Router 会话、派发过、Worker 正在跑，都没有 `bundle-in-use`；运行中的 Worker 不受影响、照常跑完；更新后不重启就能用新版派发。宿主返回里另有 `application: "restart-required"`（原因字段 `unmanaged-plugin`）：没派发过时卸载/装回是 `applied`，但在已装版本上直接装新版本、或进程里建过 Router 会话之后就变成 `restart-required`——**线上 0.3.8（patch 里没有官方工具行）逐项相同**。操作本身都成功（包已删/装、行已重新加载），只是旧预设树要等引用它的会话释放才销毁（注册表文档：「最后一个引用释放后才销毁插件树」；`unmanaged-plugin` 具体指什么没有进一步核实）。桌面版（rc.3）未测。教训：怀疑「某个改动导致停不掉」时，换一份不含该改动的构建做对照，比读源码猜快得多。

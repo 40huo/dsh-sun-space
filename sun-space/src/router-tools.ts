@@ -1,15 +1,18 @@
 /**
- * sun-router 预设的子插件：注册 7 个 sun_* 应用工具。
- * sun_route 由官方 @deepseek-ai/dsh-tool-subagent 实例提供（cordis.patch.yml：
- * toolName: sun_route + agentPreset: sun-worker）——子代白名单由组合机制保证。
+ * sun-router 预设的子插件：注册 5 个 sun_* 应用工具（读状态 / 落库 / 状态登记），并把子会话 id 回写任务笔记。
+ * 派发不在代码里：sun_route 是官方 @deepseek-ai/dsh-tool-subagent 的实例（cordis.patch.yml：
+ * toolName: sun_route + agentPreset: sun-worker + maxDepth: 1）——工具随宿主一起维护，子代白名单由组合保证。
+ * 插件不调 startActivation 等宿主内部接口：宿主 rc.1→rc.3 把它的参数从 spec.request.* 摊平成 spec.*，
+ * 手写包装在桌面版上一调即崩（0.3.8 及之前）。
  * 工具契约：ToolDefinition = { name, description, parameters, output:{schema,render}, execute }。
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { readFile, readdir, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { inlineSummary, localDate, parseFrontmatter, resolveRead, resolveSafe, updateFrontmatter, VaultPathError } from './vault'
+import { inlineSummary, localDate, parseFrontmatter, resolveRead, resolveSafe, setFrontmatterField, updateFrontmatter, VaultPathError } from './vault'
 
-export const inject = ['tools', 'subagents']
+export const inject = ['tools']
 
 import { cwdIsVaultCandidate, readStateSnapshot, registerVaultRootFromSession, setRouterSession, vaultPath } from './vault-path'
 
@@ -247,54 +250,26 @@ export function apply(ctx: Context) {
     },
   ))
 
-  ctx.tools.register(def(
-    'sun_route',
-    '创建子 Worker 会话并分派任务（task_id + prompt，可选 cwd）。子会话以 task_id 命名、其会话 id 自动回写任务笔记 session 字段（工作台卡片可直达）。cwd 用于跨目录任务（如代码开发，传仓库根的绝对路径）——沙箱可写区自动跟随会话 cwd；产物落库仍走 sun_artifact_write（vault 绝对路径，不受 cwd 影响）。name 冲突时自动改用系统命名。',
-    {
-      type: 'object',
-      properties: {
-        task_id: { type: 'string', description: '任务 ID（T-YYYYMMDD-NN），用于命名子会话与回写 session 字段' },
-        prompt: { type: 'string', description: 'Worker 的完整任务指令（含产物要求与 sun_artifact_write 用法）' },
-        cwd: { type: 'string', description: '可选：Worker 的工作目录（绝对路径）。不传则随当前工作区。代码开发等 vault 外任务必传（如 ~/Workspace/<repo>）' },
-      },
-      required: ['task_id', 'prompt'],
-    },
-    async (args: { task_id: string; prompt: string; cwd?: string }, execUnknown?: unknown) => {
-      const exec = (execUnknown ?? {}) as { agent?: unknown; signal?: AbortSignal }
-      const rawName = String(args.task_id || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+/, 't-').slice(0, 32)
-      const name = /^[a-z][a-z0-9-]{0,31}$/.test(rawName) ? rawName : undefined
-      const cwd = args.cwd ? String(args.cwd) : undefined
-      if (cwd && (!cwd.startsWith('/') || cwd.includes('..'))) {
-        return { ok: false, note: 'cwd 必须是绝对路径（不接受相对路径或 .. 穿越语义）' }
-      }
-      let activation: { childId?: string; name: string }
-      try {
-        activation = await ctx.subagents.startActivation({
-          provider: 'spawn',
-          label: name || 'sun-worker',
-          ...(name ? { name } : {}),
-          request: {
-            ...(cwd ? { cwd } : {}),
-            prompt: [{ type: 'text', text: String(args.prompt || '') }],
-            parent: exec.agent,
-            agentPreset: 'sun-worker', // 子会话挂 Worker 预设（组合白名单保证只执行）
-            maxDepth: 1,
-          },
-          signal: exec.signal,
-          delivery: 'parent',
-        })
-      } catch (e) {
-        return { ok: false, error: String((e as Error).message), stack: String((e as Error).stack || '').slice(0, 900) }
-      }
-      // 子会话 id 回写任务笔记（卡片点击直达）
-      try {
-        const p = resolveSafe(vaultPath(sessionCwdOf(exec)), `50-Tasks/${args.task_id}.md`)
-        const raw = await readFile(p, 'utf8')
-        await writeFile(p, updateFrontmatter(raw, { session: String(activation.childId ?? '') }), 'utf8')
-      } catch { /* 笔记缺失不阻断派发 */ }
-      return { ok: true, name: activation.name, child_id: activation.childId ?? null }
-    },
-  ))
+  // 子会话 id 回写任务笔记的 session 字段（审计用；工作台跳转不依赖它——派活树走宿主的子代理清单）。
+  // 事实源是宿主事件，不调宿主内部接口：子代理创建后，宿主向 Router 会话追加
+  // subagent/catalog { childId, label }，label = 派发时填的 description（Router 按人格约定填小写 task_id）。
+  // 预设作用域的监听只收 Router 会话的事件；宿主对监听器做了异常隔离，这里仍兜住——回写失败至多少一个字段。
+  // 同步读改写：在 catalog 提交的那一刻落盘，先于 sun_route 返回，不会与 Router 随后的 sun_vault_meta 互相覆盖。
+  ctx.on('session/event', (...args: unknown[]) => {
+    try {
+      const session = args[0] as { cwd?: unknown; header?: { cwd?: unknown } } | undefined
+      const event = args[1] as { type?: unknown; data?: { childId?: unknown; label?: unknown } } | undefined
+      if (event?.type !== 'subagent/catalog') return
+      const childId = event.data?.childId
+      const task = typeof event.data?.label === 'string' ? /^t-(\d{8}-\d{2})$/i.exec(event.data.label.trim()) : null
+      if (typeof childId !== 'string' || !childId || !task) return // label 不是 task_id 形状 → 与任务笔记无关
+      const dir = session?.cwd ?? session?.header?.cwd
+      if (typeof dir !== 'string' || !dir.startsWith('/')) return
+      const note = resolveSafe(vaultPath(dir), `50-Tasks/T-${task[1]}.md`)
+      if (!existsSync(note)) return // 笔记还没建 → 不替 Router 建文件
+      writeFileSync(note, setFrontmatterField(readFileSync(note, 'utf8'), 'session', childId), 'utf8')
+    } catch { /* 尽力而为：笔记读不了 / 路径被拒，都只少一个审计字段，绝不影响派发 */ }
+  })
 
-  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_state_read sun_state_write sun_route(subagents)')
+  ctx.logger?.info?.('[sun-space] router tools registered: sun_read sun_vault_write sun_vault_meta sun_state_read sun_state_write; sun_route = 官方 dsh-tool-subagent 实例（组合声明）')
 }
